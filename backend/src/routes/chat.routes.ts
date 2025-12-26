@@ -1,18 +1,20 @@
 import { Router } from 'express';
 
 import { chatController } from '../controllers/chat.controller.js';
+import { rateLimiter } from '../middleware/rate-limiter.js';
 
 /**
  * Chat API Routes
  * 
- * POST /api/chat/message    - Send message, get AI response
+ * POST /api/chat/message    - Send message, get AI response (rate limited)
  * GET  /api/chat/:sessionId - Get conversation history
  * GET  /api/chat/:sessionId/status - Get status (fallback)
  */
 export function createChatRouter(): Router {
   const router = Router();
 
-  router.post('/message', (req, res, next) => 
+  // Rate limit message sending to prevent abuse
+  router.post('/message', rateLimiter, (req, res, next) => 
     chatController.sendMessage(req, res, next),
   );
 

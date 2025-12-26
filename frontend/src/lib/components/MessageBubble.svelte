@@ -22,21 +22,21 @@
 
 <div class="message-row" class:user={isUser}>
   <div class="message-bubble" class:streaming={isStreaming}>
-    <span class="message-text">{message.content}</span>{#if isStreaming}<span class="cursor"></span>{/if}
+    <span class="content">{message.content}</span>{#if isStreaming}<span class="cursor">|</span>{/if}
   </div>
-  <span class="message-time">{formatTime(message.createdAt)}</span>
+  <span class="time">{formatTime(message.createdAt)}</span>
 </div>
 
 <style>
   .message-row {
     display: flex;
     flex-direction: column;
-    max-width: 80%;
-    animation: slideIn 0.15s ease-out;
+    max-width: 85%;
+    animation: fadeIn 0.2s ease-out;
   }
 
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(4px); }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
   }
 
@@ -52,12 +52,13 @@
 
   .message-bubble {
     padding: 10px 14px;
-    border-radius: 16px;
-    line-height: 1.45;
+    border-radius: 18px;
+    line-height: 1.5;
     word-wrap: break-word;
     word-break: break-word;
     overflow-wrap: break-word;
     white-space: pre-wrap;
+    font-size: 14px;
   }
 
   .user .message-bubble {
@@ -72,18 +73,16 @@
     border-bottom-left-radius: 4px;
   }
 
-  .message-text {
-    font-size: 14px;
+  .content {
+    display: inline;
   }
 
   .cursor {
-    display: inline-block;
-    width: 2px;
-    height: 16px;
-    background: var(--color-accent);
-    margin-left: 2px;
-    vertical-align: text-bottom;
-    animation: blink 0.8s infinite;
+    display: inline;
+    color: #ffffff;
+    font-weight: 600;
+    animation: blink 0.6s steps(1) infinite;
+    margin-left: 1px;
   }
 
   @keyframes blink {
@@ -91,7 +90,7 @@
     51%, 100% { opacity: 0; }
   }
 
-  .message-time {
+  .time {
     font-size: 11px;
     color: var(--color-text-muted);
     margin-top: 4px;

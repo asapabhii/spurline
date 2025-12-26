@@ -9,6 +9,12 @@
   });
 </script>
 
-<div class="chat-container">
-  <ChatWidget />
-</div>
+<svelte:head>
+  <title>Spurline Agent</title>
+</svelte:head>
+
+<main id="app">
+  <div class="chat-container">
+    <ChatWidget />
+  </div>
+</main>

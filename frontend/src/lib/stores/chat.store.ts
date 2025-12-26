@@ -10,33 +10,48 @@ import {
 import type { Message } from '$lib/types';
 
 // ============================================================
+// SESSION STORAGE
+// ============================================================
+
+const SESSION_KEY = 'spurline_session';
+
+function loadSession(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(id: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (id) {
+      localStorage.setItem(SESSION_KEY, id);
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  } catch {
+    // Silent fail for storage errors
+  }
+}
+
+// ============================================================
 // STORES
 // ============================================================
 
-/**
- * Session ID with localStorage persistence
- */
 function createSessionStore() {
-  const STORAGE_KEY = 'spurline_session';
-  
-  const initial = typeof window !== 'undefined' 
-    ? localStorage.getItem(STORAGE_KEY) 
-    : null;
-  
-  const { subscribe, set } = writable<string | null>(initial);
+  const { subscribe, set } = writable<string | null>(loadSession());
 
   return {
     subscribe,
     set: (value: string | null) => {
-      if (typeof window !== 'undefined') {
-        value ? localStorage.setItem(STORAGE_KEY, value) : localStorage.removeItem(STORAGE_KEY);
-      }
+      saveSession(value);
       set(value);
     },
     clear: () => {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(STORAGE_KEY);
-      }
+      saveSession(null);
       set(null);
     },
   };
@@ -64,6 +79,7 @@ export function initChatSocket(): void {
     
     onStreamStart: ({ messageId }) => {
       streamingMessageId.set(messageId);
+      // Add placeholder message for streaming
       messages.update((msgs) => [
         ...msgs,
         {
@@ -76,8 +92,13 @@ export function initChatSocket(): void {
     },
     
     onStreamChunk: ({ messageId, chunk }: StreamChunk) => {
+      // Append chunk to existing message
       messages.update((msgs) => 
-        msgs.map((m) => m.id === messageId ? { ...m, content: m.content + chunk } : m)
+        msgs.map((m) => 
+          m.id === messageId 
+            ? { ...m, content: m.content + chunk } 
+            : m
+        )
       );
     },
     
@@ -85,8 +106,14 @@ export function initChatSocket(): void {
       streamingMessageId.set(null);
       isTyping.set(false);
       suggestions.set(newSuggestions);
+      
+      // Update message with suggestions
       messages.update((msgs) => 
-        msgs.map((m) => m.id === messageId ? { ...m, suggestions: newSuggestions } : m)
+        msgs.map((m) => 
+          m.id === messageId 
+            ? { ...m, suggestions: newSuggestions } 
+            : m
+        )
       );
     },
   });
@@ -98,7 +125,7 @@ export function initChatSocket(): void {
 
 export const chatActions = {
   /**
-   * Load existing conversation
+   * Load existing conversation from server
    */
   async loadConversation(): Promise<void> {
     const sid = get(sessionId);
@@ -112,20 +139,26 @@ export const chatActions = {
       messages.set(response.messages);
       joinConversation(sid);
       
-      // Set suggestions from last AI message
-      const lastAi = [...response.messages].reverse().find(m => m.sender === 'ai');
-      if (lastAi?.suggestions?.length) {
-        suggestions.set(lastAi.suggestions);
+      // Restore suggestions from last AI message
+      const lastAiMsg = [...response.messages]
+        .reverse()
+        .find((m) => m.sender === 'ai');
+      
+      if (lastAiMsg?.suggestions?.length) {
+        suggestions.set(lastAiMsg.suggestions);
       }
     } catch {
+      // Session expired or not found - start fresh
+      sessionId.clear();
       messages.set([]);
+      suggestions.set([]);
     } finally {
       isLoading.set(false);
     }
   },
 
   /**
-   * Send a message
+   * Send a message to the agent
    */
   async sendMessage(content: string): Promise<void> {
     const trimmed = content.trim();
@@ -135,8 +168,9 @@ export const chatActions = {
     
     // Clear previous suggestions
     suggestions.set([]);
+    error.set(null);
     
-    // Optimistic user message
+    // Add optimistic user message
     const tempId = `temp-${Date.now()}`;
     const userMsg: Message = {
       content: trimmed,
@@ -147,7 +181,6 @@ export const chatActions = {
     
     messages.update((msgs) => [...msgs, userMsg]);
     isTyping.set(true);
-    error.set(null);
 
     try {
       const response = await api.sendMessage({
@@ -155,20 +188,26 @@ export const chatActions = {
         sessionId: sid ?? undefined,
       });
 
-      // Update session if new
+      // Update session if new or different
       if (!sid || sid !== response.sessionId) {
         sessionId.set(response.sessionId);
         joinConversation(response.sessionId);
       }
 
-      // Update temp message ID
+      // Update temp message with real ID
       messages.update((msgs) => 
-        msgs.map((m) => m.id === tempId ? { ...m, id: `user-${Date.now()}` } : m)
+        msgs.map((m) => 
+          m.id === tempId 
+            ? { ...m, id: `user-${Date.now()}` } 
+            : m
+        )
       );
 
-      // If streaming didn't add the AI message, add it now
+      // If streaming didn't add the AI message, add it now (fallback)
       const currentMsgs = get(messages);
-      if (!currentMsgs.some(m => m.id === response.messageId)) {
+      const hasAiMessage = currentMsgs.some((m) => m.id === response.messageId);
+      
+      if (!hasAiMessage) {
         messages.update((msgs) => [
           ...msgs,
           {
@@ -182,29 +221,34 @@ export const chatActions = {
         suggestions.set(response.suggestions);
       }
     } catch (e) {
+      // Remove optimistic message on error
       messages.update((msgs) => msgs.filter((m) => m.id !== tempId));
-      error.set(e instanceof Error ? e.message : 'Failed to send message');
+      error.set(
+        e instanceof Error 
+          ? e.message 
+          : 'Something went wrong. Please try again.',
+      );
     } finally {
       isTyping.set(false);
     }
   },
 
   /**
-   * Send a suggested question
+   * Send a suggested follow-up question
    */
   sendSuggestion(text: string): Promise<void> {
     return this.sendMessage(text);
   },
 
   /**
-   * Clear error
+   * Clear error message
    */
   clearError(): void {
     error.set(null);
   },
 
   /**
-   * Start new conversation
+   * Start a new conversation
    */
   newConversation(): void {
     const sid = get(sessionId);
@@ -214,5 +258,7 @@ export const chatActions = {
     messages.set([]);
     suggestions.set([]);
     error.set(null);
+    isTyping.set(false);
+    streamingMessageId.set(null);
   },
 };

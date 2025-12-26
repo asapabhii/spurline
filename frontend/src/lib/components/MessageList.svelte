@@ -7,16 +7,29 @@
   import { messages, isTyping, isEmpty, isStreaming } from '$lib/stores/chat.store';
 
   let container: HTMLDivElement;
+  let lastMessageCount = 0;
 
-  // Auto-scroll on new content
+  // Smooth auto-scroll on new messages or streaming
   $effect(() => {
-    const _ = [$messages.length, $isTyping, $isStreaming];
-    tick().then(() => {
-      if (container) {
-        container.scrollTop = container.scrollHeight;
-      }
-    });
+    const messageCount = $messages.length;
+    const typing = $isTyping;
+    const streaming = $isStreaming;
+    
+    // Only scroll if we have new content
+    if (messageCount > lastMessageCount || typing || streaming) {
+      lastMessageCount = messageCount;
+      tick().then(scrollToBottom);
+    }
   });
+
+  function scrollToBottom() {
+    if (!container) return;
+    
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: 'smooth',
+    });
+  }
 </script>
 
 <div class="messages-container" bind:this={container}>
@@ -42,12 +55,14 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 12px 16px;
+    padding: 16px;
+    scroll-behavior: smooth;
   }
 
   .messages-list {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: 100%;
   }
 </style>
