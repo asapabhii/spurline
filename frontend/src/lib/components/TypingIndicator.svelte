@@ -1,24 +1,48 @@
 <div class="typing-row">
-  <div class="typing-bubble">
-    <span class="dot"></span>
-    <span class="dot"></span>
-    <span class="dot"></span>
+  <div class="avatar">S</div>
+  
+  <div class="typing-content">
+    <div class="typing-bubble">
+      <span class="dot"></span>
+      <span class="dot"></span>
+      <span class="dot"></span>
+    </div>
+    <span class="label">Agent is typing...</span>
   </div>
-  <span class="label">Agent is typing...</span>
 </div>
 
 <style>
   .typing-row {
     display: flex;
-    flex-direction: column;
+    gap: 10px;
     align-items: flex-start;
-    gap: 4px;
     animation: fadeIn 0.2s ease-out;
   }
 
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    flex-shrink: 0;
+  }
+
+  .typing-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
 
   .typing-bubble {

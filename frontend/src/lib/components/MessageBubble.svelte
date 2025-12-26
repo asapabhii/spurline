@@ -26,8 +26,8 @@
   {/if}
   
   <div class="message-content">
-    <div class="bubble" class:streaming={isStreaming}>
-      <span class="text">{message.content}</span>{#if isStreaming}<span class="cursor">|</span>{/if}
+    <div class="bubble">
+      <span class="text">{message.content}</span>
     </div>
     <span class="time">{formatTime(message.createdAt)}</span>
   </div>
@@ -107,19 +107,6 @@
 
   .text {
     display: inline;
-  }
-
-  .cursor {
-    display: inline;
-    color: #ffffff;
-    font-weight: 600;
-    animation: blink 0.6s steps(1) infinite;
-    margin-left: 1px;
-  }
-
-  @keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
   }
 
   .time {
