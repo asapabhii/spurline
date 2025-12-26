@@ -1,6 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 import { SocketEvents } from '$lib/types';
 
+const BACKEND_URL = 'http://localhost:3001';
+
 let socket: Socket | null = null;
 
 export interface StreamChunk {
@@ -21,35 +23,31 @@ export interface SocketCallbacks {
 }
 
 /**
- * Initialize socket connection
+ * Initialize Socket.IO connection with event handlers
  */
-export function initSocket(callbacks: SocketCallbacks): Socket {
-  if (socket?.connected) {
-    return socket;
-  }
+export function initSocket(callbacks: SocketCallbacks): void {
+  if (socket?.connected) return;
 
-  const socketUrl = import.meta.env.DEV 
-    ? 'http://localhost:3001' 
-    : window.location.origin;
-
-  socket = io(socketUrl, {
+  socket = io(BACKEND_URL, {
+    autoConnect: true,
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
     transports: ['websocket', 'polling'],
   });
 
   socket.on('connect', () => {
-    console.debug('Socket connected');
+    console.debug('[Socket] Connected');
   });
 
   socket.on('disconnect', () => {
-    console.debug('Socket disconnected');
+    console.debug('[Socket] Disconnected');
   });
 
-  // AI typing indicator
-  socket.on(SocketEvents.AI_TYPING, (isTyping: boolean) => {
-    callbacks.onAiTyping?.(isTyping);
+  socket.on(SocketEvents.AI_TYPING, (data: { isTyping: boolean }) => {
+    callbacks.onAiTyping?.(data.isTyping);
   });
 
-  // Stream events
   socket.on(SocketEvents.AI_STREAM_START, (data: { messageId: string }) => {
     callbacks.onStreamStart?.(data);
   });
@@ -61,8 +59,6 @@ export function initSocket(callbacks: SocketCallbacks): Socket {
   socket.on(SocketEvents.AI_STREAM_END, (data: StreamEnd) => {
     callbacks.onStreamEnd?.(data);
   });
-
-  return socket;
 }
 
 /**
@@ -80,24 +76,9 @@ export function leaveConversation(conversationId: string): void {
 }
 
 /**
- * Emit user typing
- */
-export function emitUserTyping(conversationId: string): void {
-  socket?.emit(SocketEvents.USER_TYPING, conversationId);
-}
-
-/**
  * Disconnect socket
  */
 export function disconnectSocket(): void {
   socket?.disconnect();
   socket = null;
 }
-
-/**
- * Get socket instance
- */
-export function getSocket(): Socket | null {
-  return socket;
-}
-

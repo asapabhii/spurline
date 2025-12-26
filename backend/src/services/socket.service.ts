@@ -1,143 +1,96 @@
-import type { Server as HttpServer } from 'http';
-import { Server as SocketServer, Socket } from 'socket.io';
+import type { Server } from 'socket.io';
 
 import { logger } from '../utils/logger.js';
 
-let io: SocketServer | null = null;
-
 /**
- * Socket.IO events
+ * Socket event constants - single source of truth
  */
 export const SocketEvents = {
-  // Client -> Server
-  JOIN_CONVERSATION: 'join_conversation',
-  LEAVE_CONVERSATION: 'leave_conversation',
-  USER_TYPING: 'user_typing',
-  
-  // Server -> Client
-  AI_TYPING: 'ai_typing',
   AI_STREAM_CHUNK: 'ai_stream_chunk',
   AI_STREAM_END: 'ai_stream_end',
   AI_STREAM_START: 'ai_stream_start',
-  ERROR: 'error',
-  MESSAGE_RECEIVED: 'message_received',
+  AI_TYPING: 'ai_typing',
+  JOIN_CONVERSATION: 'join_conversation',
+  LEAVE_CONVERSATION: 'leave_conversation',
 } as const;
+
+let io: Server | null = null;
 
 /**
  * Initialize Socket.IO server
  */
-export function initSocketServer(httpServer: HttpServer): SocketServer {
-  io = new SocketServer(httpServer, {
-    cors: {
-      credentials: true,
-      origin: process.env['NODE_ENV'] === 'production' 
-        ? process.env['FRONTEND_URL'] 
-        : ['http://localhost:5173', 'http://127.0.0.1:5173'],
-    },
-    pingTimeout: 60000,
-  });
+export function initSocketService(server: Server): void {
+  io = server;
 
-  io.on('connection', handleConnection);
+  io.on('connection', (socket) => {
+    logger.debug('Client connected', { socketId: socket.id });
+
+    socket.on(SocketEvents.JOIN_CONVERSATION, (conversationId: string) => {
+      socket.join(conversationId);
+      logger.debug('Client joined conversation', { 
+        conversationId, 
+        socketId: socket.id,
+      });
+    });
+
+    socket.on(SocketEvents.LEAVE_CONVERSATION, (conversationId: string) => {
+      socket.leave(conversationId);
+      logger.debug('Client left conversation', { 
+        conversationId, 
+        socketId: socket.id,
+      });
+    });
+
+    socket.on('disconnect', () => {
+      logger.debug('Client disconnected', { socketId: socket.id });
+    });
+  });
 
   logger.info('Socket.IO server initialized');
-  return io;
 }
 
 /**
- * Get Socket.IO instance
+ * Emit to conversation room
  */
-export function getSocketServer(): SocketServer | null {
-  return io;
+function emit(conversationId: string, event: string, data: unknown): void {
+  io?.to(conversationId).emit(event, data);
 }
 
 /**
- * Handle new socket connection
- */
-function handleConnection(socket: Socket): void {
-  logger.debug('Client connected', { socketId: socket.id });
-
-  // Join conversation room
-  socket.on(SocketEvents.JOIN_CONVERSATION, (conversationId: string) => {
-    socket.join(`conversation:${conversationId}`);
-    logger.debug('Client joined conversation', { conversationId, socketId: socket.id });
-  });
-
-  // Leave conversation room
-  socket.on(SocketEvents.LEAVE_CONVERSATION, (conversationId: string) => {
-    socket.leave(`conversation:${conversationId}`);
-    logger.debug('Client left conversation', { conversationId, socketId: socket.id });
-  });
-
-  // User typing indicator
-  socket.on(SocketEvents.USER_TYPING, (conversationId: string) => {
-    socket.to(`conversation:${conversationId}`).emit(SocketEvents.USER_TYPING);
-  });
-
-  socket.on('disconnect', () => {
-    logger.debug('Client disconnected', { socketId: socket.id });
-  });
-}
-
-/**
- * Emit AI typing start to conversation
+ * Signal AI typing started
  */
 export function emitAiTypingStart(conversationId: string): void {
-  if (io) {
-    io.to(`conversation:${conversationId}`).emit(SocketEvents.AI_TYPING, true);
-  }
+  emit(conversationId, SocketEvents.AI_TYPING, { isTyping: true });
 }
 
 /**
- * Emit AI typing stop to conversation
+ * Signal AI typing stopped
  */
 export function emitAiTypingStop(conversationId: string): void {
-  if (io) {
-    io.to(`conversation:${conversationId}`).emit(SocketEvents.AI_TYPING, false);
-  }
+  emit(conversationId, SocketEvents.AI_TYPING, { isTyping: false });
 }
 
 /**
- * Emit stream start
+ * Signal stream started
  */
 export function emitStreamStart(conversationId: string, messageId: string): void {
-  if (io) {
-    io.to(`conversation:${conversationId}`).emit(SocketEvents.AI_STREAM_START, { messageId });
-  }
+  emit(conversationId, SocketEvents.AI_STREAM_START, { messageId });
 }
 
 /**
- * Emit stream chunk
+ * Send stream chunk
  */
 export function emitStreamChunk(conversationId: string, messageId: string, chunk: string): void {
-  if (io) {
-    io.to(`conversation:${conversationId}`).emit(SocketEvents.AI_STREAM_CHUNK, { chunk, messageId });
-  }
+  emit(conversationId, SocketEvents.AI_STREAM_CHUNK, { messageId, chunk });
 }
 
 /**
- * Emit stream end
+ * Signal stream ended
  */
-export function emitStreamEnd(conversationId: string, messageId: string, suggestions?: string[]): void {
-  if (io) {
-    io.to(`conversation:${conversationId}`).emit(SocketEvents.AI_STREAM_END, { 
-      messageId,
-      suggestions: suggestions ?? [],
-    });
-  }
+export function emitStreamEnd(
+  conversationId: string, 
+  messageId: string, 
+  suggestions: string[],
+): void {
+  emit(conversationId, SocketEvents.AI_STREAM_END, { messageId, suggestions });
 }
-
-/**
- * Emit message received (for non-streaming)
- */
-export function emitMessageReceived(conversationId: string, message: {
-  content: string;
-  createdAt: string;
-  id: string;
-  sender: string;
-  suggestions?: string[];
-}): void {
-  if (io) {
-    io.to(`conversation:${conversationId}`).emit(SocketEvents.MESSAGE_RECEIVED, message);
-  }
-}
-

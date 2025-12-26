@@ -9,18 +9,8 @@
 </script>
 
 <div class="error-banner" role="alert">
-  <div class="error-content">
-    <svg class="error-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v4M12 16h.01" />
-    </svg>
-    <span class="error-message">{message}</span>
-  </div>
-  <button class="dismiss-btn" onclick={() => chatActions.clearError()} aria-label="Dismiss error">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M18 6L6 18M6 6l12 12" />
-    </svg>
-  </button>
+  <span>{message}</span>
+  <button onclick={() => chatActions.clearError()} aria-label="Dismiss">×</button>
 </div>
 
 <style>
@@ -28,54 +18,32 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--spacing-sm) var(--spacing-md);
-    background: rgba(239, 68, 68, 0.1);
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--color-error-bg);
     border-bottom: 1px solid var(--color-error);
-    animation: slideDown 0.2s ease-out;
-  }
-
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translateY(-100%);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .error-content {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-  }
-
-  .error-icon {
     color: var(--color-error);
-    flex-shrink: 0;
+    font-size: 13px;
   }
 
-  .error-message {
-    font-size: var(--font-size-sm);
-    color: var(--color-error);
+  span {
+    flex: 1;
+    line-height: 1.4;
   }
 
-  .dismiss-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-xs);
-    background: transparent;
+  button {
+    width: 24px;
+    height: 24px;
     border: none;
+    background: transparent;
     color: var(--color-error);
+    font-size: 18px;
     cursor: pointer;
-    border-radius: var(--radius-sm);
-    transition: background var(--transition-fast);
+    opacity: 0.7;
+    transition: opacity 0.15s;
   }
 
-  .dismiss-btn:hover {
-    background: rgba(239, 68, 68, 0.2);
+  button:hover {
+    opacity: 1;
   }
 </style>
-
