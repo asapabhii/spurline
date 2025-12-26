@@ -4,32 +4,22 @@
   import TypingIndicator from './TypingIndicator.svelte';
   import EmptyState from './EmptyState.svelte';
   import DateBadge from './DateBadge.svelte';
-  import { messages, isTyping, isEmpty, isStreaming } from '$lib/stores/chat.store';
+  import { messages, isTyping, isEmpty } from '$lib/stores/chat.store';
 
   let container: HTMLDivElement;
-  let lastMessageCount = 0;
 
-  // Smooth auto-scroll on new messages or streaming
+  // Auto-scroll whenever messages change or typing status changes
   $effect(() => {
-    const messageCount = $messages.length;
-    const typing = $isTyping;
-    const streaming = $isStreaming;
-    
-    // Only scroll if we have new content
-    if (messageCount > lastMessageCount || typing || streaming) {
-      lastMessageCount = messageCount;
-      tick().then(scrollToBottom);
-    }
-  });
+    // Subscribe to changes
+    const _ = [$messages, $isTyping];
 
-  function scrollToBottom() {
-    if (!container) return;
-    
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: 'smooth',
+    // Scroll after DOM updates
+    tick().then(() => {
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
     });
-  }
+  });
 </script>
 
 <div class="messages-container" bind:this={container}>
@@ -38,12 +28,12 @@
   {:else}
     <div class="messages-list">
       <DateBadge />
-      
+
       {#each $messages as message (message.id)}
         <MessageBubble {message} />
       {/each}
-      
-      {#if $isTyping && !$isStreaming}
+
+      {#if $isTyping}
         <TypingIndicator />
       {/if}
     </div>
@@ -56,7 +46,6 @@
     overflow-y: auto;
     overflow-x: hidden;
     padding: 16px;
-    scroll-behavior: smooth;
   }
 
   .messages-list {

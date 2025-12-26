@@ -1,11 +1,11 @@
 export { chatService, ChatService } from './chat.service.js';
 export { llmService, type ILLMService, type LLMResponse } from './llm.service.js';
-export { 
+export {
   emitAiTypingStart,
   emitAiTypingStop,
   emitStreamChunk,
   emitStreamEnd,
   emitStreamStart,
-  initSocketService,
+  initSocketServer,
   SocketEvents,
 } from './socket.service.js';

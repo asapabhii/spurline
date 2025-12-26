@@ -20,6 +20,7 @@ export interface SendMessageResponse {
   messageId: string;
   reply: string;
   sessionId: string;
+  suggestions: string[];
 }
 
 // GET /api/chat/:sessionId
@@ -29,6 +30,7 @@ export interface ConversationHistoryResponse {
     createdAt: string;
     id: string;
     sender: 'ai' | 'user';
+    suggestions?: string[];
   }>;
   sessionId: string;
 }
@@ -44,4 +46,3 @@ export interface ApiErrorResponse {
   error: string;
   message: string;
 }
-

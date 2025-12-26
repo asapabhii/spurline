@@ -1,3 +1,4 @@
+import { AppError } from '../middleware/error-handler.js';
 import { queryAll, queryOne, runStatement } from '../config/database.js';
 import { Message, type MessageRow, type MessageSender } from '../types/domain.types.js';
 import { generateId } from '../utils/id.js';
@@ -24,6 +25,7 @@ export class MessageRepository {
 
   /**
    * Create a placeholder message (for streaming)
+   * Creates empty message that will be updated as chunks arrive
    */
   createPlaceholder(conversationId: string): string {
     const id = generateId();
@@ -38,21 +40,16 @@ export class MessageRepository {
   }
 
   /**
-   * Update placeholder with actual content
+   * Update placeholder message with final content after streaming completes
+   * Note: Suggestions are ephemeral (sent via WebSocket, not persisted)
    */
-  updatePlaceholder(id: string, content: string, suggestions?: string[]): Message {
-    runStatement(
-      'UPDATE messages SET content = ?, suggestions = ? WHERE id = ?',
-      [content, suggestions ? JSON.stringify(suggestions) : null, id]
-    );
+  updatePlaceholder(id: string, content: string, _suggestions?: string[]): Message {
+    runStatement('UPDATE messages SET content = ? WHERE id = ?', [content, id]);
 
-    const row = queryOne<MessageRow & { suggestions?: string }>(
-      'SELECT * FROM messages WHERE id = ?',
-      [id]
-    );
+    const row = queryOne<MessageRow>('SELECT * FROM messages WHERE id = ?', [id]);
 
     if (!row) {
-      throw new Error(`Message ${id} not found`);
+      throw new AppError(500, 'Failed to update message', 'DATABASE_ERROR');
     }
 
     return Message.fromRow(row);
@@ -62,10 +59,10 @@ export class MessageRepository {
    * Get messages for a conversation, ordered by creation time
    */
   findByConversationId(conversationId: string, limit?: number): Message[] {
-    let rows: (MessageRow & { suggestions?: string })[];
+    let rows: MessageRow[];
 
     if (limit) {
-      rows = queryAll<MessageRow & { suggestions?: string }>(
+      rows = queryAll<MessageRow>(
         `SELECT * FROM (
           SELECT * FROM messages 
           WHERE conversation_id = ? 
@@ -75,7 +72,7 @@ export class MessageRepository {
         [conversationId, limit]
       );
     } else {
-      rows = queryAll<MessageRow & { suggestions?: string }>(
+      rows = queryAll<MessageRow>(
         'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC',
         [conversationId]
       );
@@ -86,16 +83,17 @@ export class MessageRepository {
 
   /**
    * Get messages with suggestions
+   * Note: Suggestions are ephemeral (generated per-request, not stored in DB)
    */
   findByConversationIdWithSuggestions(conversationId: string): MessageWithSuggestions[] {
-    const rows = queryAll<MessageRow & { suggestions?: string }>(
+    const rows = queryAll<MessageRow>(
       'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC',
       [conversationId]
     );
 
     return rows.map((row) => ({
       ...Message.fromRow(row),
-      suggestions: row.suggestions ? JSON.parse(row.suggestions) as string[] : [],
+      suggestions: [], // Suggestions are ephemeral, not stored
     }));
   }
 

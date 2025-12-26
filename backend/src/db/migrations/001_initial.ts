@@ -1,8 +1,13 @@
-import type Database from 'better-sqlite3';
+/**
+ * Migration 001: Initial schema
+ * Creates conversations and messages tables
+ */
 
-export const up = (db: Database.Database): void => {
+import type { Database as SqlJsDatabase } from 'sql.js';
+
+export const up = (db: SqlJsDatabase): void => {
   // Create conversations table
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
       created_at TEXT NOT NULL,
@@ -12,7 +17,7 @@ export const up = (db: Database.Database): void => {
   `);
 
   // Create messages table
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       conversation_id TEXT NOT NULL,
@@ -24,18 +29,18 @@ export const up = (db: Database.Database): void => {
   `);
 
   // Create indexes for efficient lookups
-  db.exec(`
+  db.run(`
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_id 
     ON messages(conversation_id);
   `);
 
-  db.exec(`
+  db.run(`
     CREATE INDEX IF NOT EXISTS idx_messages_created_at 
     ON messages(created_at);
   `);
 
   // Create migrations tracking table
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS migrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -44,9 +49,8 @@ export const up = (db: Database.Database): void => {
   `);
 };
 
-export const down = (db: Database.Database): void => {
-  db.exec('DROP TABLE IF EXISTS messages;');
-  db.exec('DROP TABLE IF EXISTS conversations;');
-  db.exec('DROP TABLE IF EXISTS migrations;');
+export const down = (db: SqlJsDatabase): void => {
+  db.run('DROP TABLE IF EXISTS messages;');
+  db.run('DROP TABLE IF EXISTS conversations;');
+  db.run('DROP TABLE IF EXISTS migrations;');
 };
-

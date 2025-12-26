@@ -3,29 +3,23 @@ import express from 'express';
 
 import { errorHandler } from './middleware/error-handler.js';
 import { validateJsonBody } from './middleware/validation.js';
-import { createChatRouter } from './routes/chat.routes.js';
+import { createChatRouter, createHealthRouter } from './routes/index.js';
 
 export function createApp(): express.Application {
   const app = express();
 
   // Middleware
-  app.use(cors({
-    origin: process.env['NODE_ENV'] === 'production' 
-      ? process.env['FRONTEND_URL'] 
-      : true,
-    credentials: true,
-  }));
-  app.use(express.json({ limit: '10kb' })); // Limit payload size
-  app.use(validateJsonBody); // Validate JSON parsing
+  app.use(
+    cors({
+      origin: process.env['NODE_ENV'] === 'production' ? process.env['FRONTEND_URL'] : true,
+      credentials: true,
+    })
+  );
+  app.use(express.json({ limit: '10kb' }));
+  app.use(validateJsonBody);
 
-  // Health check
-  app.get('/health', (_req, res) => {
-    res.json({ 
-      status: 'ok', 
-      timestamp: new Date().toISOString(),
-      version: '1.0.0',
-    });
-  });
+  // Health check routes
+  app.use('/health', createHealthRouter());
 
   // API routes
   app.use('/api/chat', createChatRouter());
@@ -43,4 +37,3 @@ export function createApp(): express.Application {
 
   return app;
 }
-

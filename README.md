@@ -1,19 +1,6 @@
 # Spurline
 
-A production-shaped AI support agent with real persistence, guardrails, and extensible architecture.
-
-Built as a take-home assignment demonstrating industry-grade engineering practices.
-
----
-
-## Features
-
-- **Real-time Streaming** - ChatGPT-style response streaming via WebSocket
-- **Persistent Conversations** - SQLite-backed with session continuity
-- **Smart Suggestions** - Context-aware follow-up questions
-- **Multi-language** - Responds in the user's language
-- **Clean Architecture** - Strict separation of concerns
-- **Production Logging** - Structured logs with timing metrics
+A production-grade AI support agent with real persistence, streaming responses, and extensible architecture.
 
 ---
 
@@ -30,8 +17,10 @@ Built as a take-home assignment demonstrating industry-grade engineering practic
 git clone https://github.com/asapabhii/spurline.git
 cd spurline
 
-# Install dependencies
+# Backend
 cd backend && npm install
+
+# Frontend
 cd ../frontend && npm install
 ```
 
@@ -49,19 +38,24 @@ PORT=3001
 NODE_ENV=development
 DATABASE_PATH=./data/spurline.db
 HUGGINGFACE_API_TOKEN=hf_your_token_here
+REDIS_URL=redis://localhost:6379  # Optional
 ```
 
 **Get your Hugging Face token:**
 1. Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-2. Create a new token (read access is sufficient)
+2. Create a new token (read access)
 3. Paste into `.env`
 
 ### 3. Setup Database
 
 ```bash
 cd backend
+
+# Run migrations
 npm run migrate
-npm run seed  # Optional: seed sample data
+
+# Seed sample data (optional)
+npm run seed
 ```
 
 ### 4. Start Services
@@ -78,6 +72,16 @@ cd frontend && npm run dev
 
 Visit [http://localhost:5173](http://localhost:5173)
 
+### 6. Verify Health
+
+```bash
+curl http://localhost:3001/health
+# {"status":"ok","timestamp":"..."}
+
+curl http://localhost:3001/health/ready
+# {"status":"ready","checks":{"database":"ok","redis":"ok"},...}
+```
+
 ---
 
 ## Architecture
@@ -85,94 +89,98 @@ Visit [http://localhost:5173](http://localhost:5173)
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Frontend (SvelteKit)                        │
-│  Chat Widget → API Client → Svelte Stores → UI Components       │
-│                      ↕ WebSocket (Socket.IO)                    │
+│  Components → Stores → API Client ↔ WebSocket (Socket.IO)       │
 └─────────────────────────────┬───────────────────────────────────┘
-                              │ HTTP REST + WS
+                              │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Backend (Express + TypeScript)              │
 │                                                                 │
-│  Routes → Controllers → Services → Repositories → SQLite       │
-│                            │                                    │
-│                            ├── LLM Service (Hugging Face)       │
-│                            └── Socket Service (real-time)       │
+│  ┌─────────┐   ┌─────────────┐   ┌──────────────┐              │
+│  │ Routes  │ → │ Controllers │ → │   Services   │              │
+│  └─────────┘   └─────────────┘   └──────┬───────┘              │
+│                                         │                       │
+│                    ┌────────────────────┼────────────────────┐  │
+│                    │                    │                    │  │
+│                    ▼                    ▼                    ▼  │
+│             ┌────────────┐      ┌─────────────┐      ┌───────┐ │
+│             │ LLMService │      │ Repositories│      │ Redis │ │
+│             │ (HF API)   │      │  (SQLite)   │      │(cache)│ │
+│             └────────────┘      └─────────────┘      └───────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Layer Responsibilities
+### Backend Layers
 
 | Layer | Responsibility |
 |-------|----------------|
-| **Routes** | HTTP contracts, URL mapping |
+| **Routes** | HTTP/WS endpoints, URL mapping |
 | **Controllers** | Request validation, response formatting |
-| **Services** | Business logic, orchestration |
+| **Services** | Business logic, LLM orchestration |
 | **Repositories** | Data access, SQL queries |
-| **Database** | SQLite for persistence |
 
 ### Key Design Decisions
 
-- **LLM Isolation**: LLM only called from `LLMService` - never from controllers
-- **Stream-first**: Real-time response streaming via WebSocket
-- **SQLite for truth**: All conversation data persists in SQLite
-- **Session continuity**: `sessionId` enables persistence across page reloads
+1. **LLM Abstraction** - `ILLMService` interface allows swapping providers (HuggingFace → OpenAI → Anthropic) without changing business logic.
 
----
+2. **Streaming First** - WebSocket streams responses character-by-character for real-time UX.
 
-## API Endpoints
+3. **Graceful Degradation** - App works without Redis; rate limiting falls back to in-memory.
 
-### POST `/api/chat/message`
-Send a message and receive AI response.
-
-```json
-// Request
-{ "message": "What are your shipping options?", "sessionId": "uuid-optional" }
-
-// Response
-{ 
-  "sessionId": "uuid", 
-  "reply": "We offer free shipping...", 
-  "messageId": "uuid", 
-  "createdAt": "ISO8601",
-  "suggestions": ["Track order?", "Return policy?", "Delivery time?"]
-}
-```
-
-### GET `/api/chat/:sessionId`
-Retrieve conversation history.
-
-### GET `/api/chat/:sessionId/status`
-Check typing indicator (fallback for WebSocket).
+4. **Session Continuity** - `sessionId` persists in localStorage + SQLite for conversation history across reloads.
 
 ---
 
 ## LLM Integration
 
-### Provider: Hugging Face Inference API (Free Tier)
+### Provider
 
-**Model**: `meta-llama/Llama-3.2-3B-Instruct`
+**Hugging Face Inference API** (Free Tier)  
+**Model:** `meta-llama/Llama-3.2-3B-Instruct`
 
-**Why this choice:**
-- Free tier with no credit card required
-- Good quality responses for support use cases
-- Fast inference with streaming support
-- Well-suited for instruction-following
+### Why This Choice
+
+- Free tier, no credit card required
+- Good instruction-following for support use cases
+- Streaming support via SSE
+- Fast inference (~2-3s responses)
 
 ### Prompting Strategy
 
-The system prompt includes:
-1. **Role definition**: Helpful support agent
-2. **Behavior guidelines**: Concise, accurate, 1-2 sentences
-3. **Domain knowledge**: Shipping, returns, support hours
-4. **Guardrails**: Don't hallucinate policies
+```
+System prompt includes:
+1. Role: "Helpful customer support agent for Spurline"
+2. Rules: Concise (1-3 sentences), no placeholders, no hallucinations
+3. Domain knowledge: Shipping, returns, contact info
+4. Fallback: "I don't have that information, email support@spurline.com"
+```
 
 ### Error Handling
 
 | Error | User Message |
 |-------|--------------|
-| Rate Limited (429) | "The agent is currently busy. Please try again in a moment." |
-| Service Unavailable (503) | "The agent is temporarily unavailable. Please try again shortly." |
-| Timeout | "The response took too long. Please try again." |
+| 429 (Rate Limited) | "The agent is busy. Please try again." |
+| 503 (Unavailable) | "Agent temporarily unavailable." |
+| Timeout | "Response took too long. Try again." |
+
+---
+
+## API Endpoints
+
+### Chat
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/chat/message` | Send message, get AI response |
+| GET | `/api/chat/:sessionId` | Get conversation history |
+| GET | `/api/chat/:sessionId/status` | Get typing status |
+
+### Health
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Liveness check |
+| GET | `/health/ready` | Readiness check (DB + Redis) |
 
 ---
 
@@ -182,14 +190,14 @@ The system prompt includes:
 CREATE TABLE conversations (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
-  channel TEXT NOT NULL DEFAULT 'web',
+  channel TEXT DEFAULT 'web',
   metadata TEXT
 );
 
 CREATE TABLE messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
-  sender TEXT NOT NULL CHECK (sender IN ('user', 'ai')),
+  sender TEXT CHECK (sender IN ('user', 'ai')),
   content TEXT NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
@@ -199,10 +207,22 @@ CREATE TABLE suggestions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   message_id TEXT NOT NULL,
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL,
   FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
 );
 ```
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PORT` | No | Server port (default: 3001) |
+| `NODE_ENV` | No | development / production |
+| `DATABASE_PATH` | No | SQLite path (default: ./data/spurline.db) |
+| `HUGGINGFACE_API_TOKEN` | Yes | HuggingFace API token |
+| `REDIS_URL` | No | Redis URL (optional) |
+| `FRONTEND_URL` | No | Frontend URL for CORS (production) |
 
 ---
 
@@ -210,86 +230,23 @@ CREATE TABLE suggestions (
 
 | Decision | Trade-off | Rationale |
 |----------|-----------|-----------|
-| SQLite over Postgres | No concurrent writes at scale | Zero-config, perfect for demo/early stage |
-| WebSocket over SSE | More complex | Better browser support, bidirectional |
-| Session in localStorage | Lost on clear storage | No auth required, good for demo |
+| SQLite over Postgres | No concurrent writes at scale | Zero-config, perfect for demo |
+| sql.js over better-sqlite3 | Slightly slower | Pure JS, no native compilation |
+| In-memory rate limiting | Lost on restart | Simpler, Redis optional |
 | Llama 3.2 3B | Smaller model | Free tier, fast, reliable |
-
----
-
-## Deployment Notes
-
-For the hosted demo, the backend is deployed as a single Node.js service using SQLite for persistence. This mirrors how an early-stage product might ship behind a feature flag.
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `PORT` | No | Server port (default: 3001) |
-| `NODE_ENV` | No | Environment (development/production) |
-| `DATABASE_PATH` | No | SQLite file path (default: ./data/spurline.db) |
-| `HUGGINGFACE_API_TOKEN` | Yes | HF API token for LLM |
-| `FRONTEND_URL` | No | Frontend URL for CORS (production) |
-| `REDIS_URL` | No | Redis for optional caching |
-
----
-
-## Project Structure
-
-```
-spurline/
-├── backend/
-│   ├── src/
-│   │   ├── config/         # Database, Redis, environment
-│   │   ├── controllers/    # Request handlers
-│   │   ├── db/             # Migrations, seeds
-│   │   ├── middleware/     # Error handling, validation
-│   │   ├── repositories/   # Data access layer
-│   │   ├── routes/         # API routes
-│   │   ├── services/       # Business logic, LLM, Socket
-│   │   ├── types/          # TypeScript types
-│   │   └── utils/          # Logger, ID generator
-│   └── package.json
-│
-├── frontend/
-│   ├── src/
-│   │   ├── lib/
-│   │   │   ├── components/ # Svelte components
-│   │   │   ├── services/   # API client, Socket client
-│   │   │   ├── stores/     # State management
-│   │   │   └── types/      # TypeScript types
-│   │   └── routes/         # SvelteKit pages
-│   └── package.json
-│
-└── README.md
-```
 
 ---
 
 ## If I Had More Time...
 
-### Infrastructure
-- [ ] Docker Compose for local development
-- [ ] Rate limiting per session
-- [ ] Health check dashboard
-- [ ] Integration tests with test database
+1. **Authentication** - Add user accounts with JWT/OAuth for personalized conversations and conversation history tied to users.
 
-### Features
-- [ ] Conversation export
-- [ ] Admin dashboard
-- [ ] Knowledge base management
+2. **Admin Dashboard** - Build a dashboard to view all conversations, analytics, and manage the knowledge base.
 
-### Channel Extensions
-- [ ] WhatsApp Business API integration
-- [ ] Instagram DM integration
-- [ ] Email fallback for offline
+3. **Integration Tests** - Add comprehensive tests with test database for CI/CD pipeline.
+
+4. **Multi-channel Support** - WhatsApp Business API and Instagram DM integration for omnichannel support.
 
 ---
 
-## License
-
-MIT
-
----
-
-Built with calm engineering by a founding-minded developer.
+Built with calm engineering by abhi.

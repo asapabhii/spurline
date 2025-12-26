@@ -8,26 +8,23 @@
 
   // Show suggestions only when not streaming/typing and we have suggestions
   const showSuggestions = $derived(
-    !$isEmpty && 
-    !$isStreaming && 
-    !$isTyping && 
-    $suggestions.length > 0
+    !$isEmpty && !$isStreaming && !$isTyping && $suggestions.length > 0
   );
 </script>
 
 <div class="chat-widget">
   <ChatHeader />
-  
+
   {#if $error}
     <ErrorBanner message={$error} />
   {/if}
-  
+
   <MessageList />
-  
+
   {#if showSuggestions}
     <Suggestions />
   {/if}
-  
+
   <ChatInput />
 </div>
 

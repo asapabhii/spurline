@@ -7,7 +7,11 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "dev": "vite dev",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src --ext .ts,.js",
+    "lint:fix": "eslint src --ext .ts,.js --fix",
+    "format": "prettier --write \"src/**/*.{ts,js,svelte,json,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,svelte,json,css}\""
   },
   "dependencies": {
     "socket.io-client": "^4.8.1"
@@ -16,6 +20,11 @@
     "@sveltejs/adapter-auto": "^3.3.1",
     "@sveltejs/kit": "^2.8.0",
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "prettier-plugin-svelte": "^3.2.0",
     "svelte": "^5.2.0",
     "svelte-check": "^4.0.0",
     "typescript": "^5.6.3",

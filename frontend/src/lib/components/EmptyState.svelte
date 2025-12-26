@@ -1,25 +1,31 @@
 <script lang="ts">
   import { chatActions, isTyping } from '$lib/stores/chat.store';
 
-  const quickQuestions = [
-    'Shipping info',
-    'Return policy',
-    'Track order',
-  ];
+  const quickQuestions = ['Shipping info', 'Return policy', 'Track order'];
 </script>
 
 <div class="empty">
   <div class="content">
-    <div class="avatar">💬</div>
+    <div class="avatar">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 6h12v2H6V6z" fill="currentColor" />
+        <path d="M4 8h16v12a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" fill="currentColor" />
+        <circle cx="9" cy="14" r="1.5" fill="#2563eb" />
+        <circle cx="15" cy="14" r="1.5" fill="#2563eb" />
+        <path
+          d="M9 17.5c0 0 1.5 1.5 3 1.5s3-1.5 3-1.5"
+          stroke="#2563eb"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+      </svg>
+    </div>
     <h2>Spurline Agent</h2>
     <p>How can I help you today?</p>
-    
+
     <div class="quick-actions">
       {#each quickQuestions as question}
-        <button 
-          onclick={() => chatActions.sendSuggestion(question)} 
-          disabled={$isTyping}
-        >
+        <button onclick={() => chatActions.sendSuggestion(question)} disabled={$isTyping}>
           {question}
         </button>
       {/each}
@@ -44,8 +50,21 @@
   }
 
   .avatar {
-    font-size: 56px;
+    width: 64px;
+    height: 64px;
+    background: #2563eb;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    color: #fff;
     margin-bottom: 16px;
+  }
+
+  .avatar svg {
+    width: 100%;
+    height: 100%;
   }
 
   h2 {

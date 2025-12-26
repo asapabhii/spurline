@@ -45,4 +45,4 @@ export const SocketEvents = {
   LEAVE_CONVERSATION: 'leave_conversation',
 } as const;
 
-export type SocketEventType = typeof SocketEvents[keyof typeof SocketEvents];
+export type SocketEventType = (typeof SocketEvents)[keyof typeof SocketEvents];

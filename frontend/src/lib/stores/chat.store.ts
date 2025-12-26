@@ -1,10 +1,10 @@
 import { writable, derived, get } from 'svelte/store';
 import { api } from '$lib/services/api';
-import { 
-  initSocket, 
-  joinConversation, 
-  leaveConversation, 
-  type StreamChunk, 
+import {
+  initSocket,
+  joinConversation,
+  leaveConversation,
+  type StreamChunk,
   type StreamEnd,
 } from '$lib/services/socket';
 import type { Message } from '$lib/types';
@@ -75,10 +75,14 @@ export const isStreaming = derived(streamingMessageId, ($id) => $id !== null);
 
 export function initChatSocket(): void {
   initSocket({
-    onAiTyping: (typing) => isTyping.set(typing),
-    
+    onAiTyping: (typing) => {
+      isTyping.set(typing);
+    },
+
     onStreamStart: ({ messageId }) => {
       streamingMessageId.set(messageId);
+      isTyping.set(false); // Stop typing indicator when streaming starts
+
       // Add placeholder message for streaming
       messages.update((msgs) => [
         ...msgs,
@@ -90,30 +94,22 @@ export function initChatSocket(): void {
         },
       ]);
     },
-    
+
     onStreamChunk: ({ messageId, chunk }: StreamChunk) => {
       // Append chunk to existing message
-      messages.update((msgs) => 
-        msgs.map((m) => 
-          m.id === messageId 
-            ? { ...m, content: m.content + chunk } 
-            : m
-        )
+      messages.update((msgs) =>
+        msgs.map((m) => (m.id === messageId ? { ...m, content: m.content + chunk } : m))
       );
     },
-    
+
     onStreamEnd: ({ messageId, suggestions: newSuggestions }: StreamEnd) => {
       streamingMessageId.set(null);
       isTyping.set(false);
       suggestions.set(newSuggestions);
-      
+
       // Update message with suggestions
-      messages.update((msgs) => 
-        msgs.map((m) => 
-          m.id === messageId 
-            ? { ...m, suggestions: newSuggestions } 
-            : m
-        )
+      messages.update((msgs) =>
+        msgs.map((m) => (m.id === messageId ? { ...m, suggestions: newSuggestions } : m))
       );
     },
   });
@@ -134,16 +130,14 @@ export const chatActions = {
     try {
       isLoading.set(true);
       error.set(null);
-      
+
       const response = await api.getConversation(sid);
       messages.set(response.messages);
       joinConversation(sid);
-      
+
       // Restore suggestions from last AI message
-      const lastAiMsg = [...response.messages]
-        .reverse()
-        .find((m) => m.sender === 'ai');
-      
+      const lastAiMsg = [...response.messages].reverse().find((m) => m.sender === 'ai');
+
       if (lastAiMsg?.suggestions?.length) {
         suggestions.set(lastAiMsg.suggestions);
       }
@@ -165,11 +159,11 @@ export const chatActions = {
     if (!trimmed) return;
 
     const sid = get(sessionId);
-    
+
     // Clear previous suggestions
     suggestions.set([]);
     error.set(null);
-    
+
     // Add optimistic user message
     const tempId = `temp-${Date.now()}`;
     const userMsg: Message = {
@@ -178,7 +172,7 @@ export const chatActions = {
       id: tempId,
       sender: 'user',
     };
-    
+
     messages.update((msgs) => [...msgs, userMsg]);
     isTyping.set(true);
 
@@ -195,18 +189,14 @@ export const chatActions = {
       }
 
       // Update temp message with real ID
-      messages.update((msgs) => 
-        msgs.map((m) => 
-          m.id === tempId 
-            ? { ...m, id: `user-${Date.now()}` } 
-            : m
-        )
+      messages.update((msgs) =>
+        msgs.map((m) => (m.id === tempId ? { ...m, id: `user-${Date.now()}` } : m))
       );
 
       // If streaming didn't add the AI message, add it now (fallback)
       const currentMsgs = get(messages);
       const hasAiMessage = currentMsgs.some((m) => m.id === response.messageId);
-      
+
       if (!hasAiMessage) {
         messages.update((msgs) => [
           ...msgs,
@@ -223,11 +213,7 @@ export const chatActions = {
     } catch (e) {
       // Remove optimistic message on error
       messages.update((msgs) => msgs.filter((m) => m.id !== tempId));
-      error.set(
-        e instanceof Error 
-          ? e.message 
-          : 'Something went wrong. Please try again.',
-      );
+      error.set(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
     } finally {
       isTyping.set(false);
     }
@@ -253,7 +239,7 @@ export const chatActions = {
   newConversation(): void {
     const sid = get(sessionId);
     if (sid) leaveConversation(sid);
-    
+
     sessionId.clear();
     messages.set([]);
     suggestions.set([]);

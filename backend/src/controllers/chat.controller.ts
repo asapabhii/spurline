@@ -9,7 +9,6 @@ import {
   sendMessageRequestSchema,
   type SendMessageResponse,
 } from '../types/api.types.js';
-import { logger } from '../utils/logger.js';
 
 /**
  * Extended response with suggestions
@@ -27,26 +26,22 @@ export class ChatController {
    * POST /api/chat/message
    * Send message and receive streaming AI response
    */
-  async sendMessage(
-    req: Request,
-    res: Response<ChatResponse>,
-    next: NextFunction,
-  ): Promise<void> {
+  async sendMessage(req: Request, res: Response<ChatResponse>, next: NextFunction): Promise<void> {
     try {
       // Validate request schema
       const validation = sendMessageRequestSchema.safeParse(req.body);
-      
+
       if (!validation.success) {
         const error = validation.error.errors[0];
         throw new AppError(400, error?.message ?? 'Invalid request', 'VALIDATION_ERROR');
       }
 
       const { sessionId } = validation.data;
-      
+
       // Sanitize and validate content
       const content = sanitizeInput(validation.data.message);
       const contentCheck = validateMessageContent(content);
-      
+
       if (!contentCheck.isValid) {
         throw new AppError(400, contentCheck.error ?? 'Invalid message', 'VALIDATION_ERROR');
       }
@@ -74,7 +69,7 @@ export class ChatController {
   async getConversation(
     req: Request<{ sessionId: string }>,
     res: Response<ConversationHistoryResponse>,
-    next: NextFunction,
+    next: NextFunction
   ): Promise<void> {
     try {
       const { sessionId } = req.params;
@@ -90,7 +85,8 @@ export class ChatController {
       }
 
       // Get messages with suggestions
-      const messagesWithSuggestions = messageRepository.findByConversationIdWithSuggestions(sessionId);
+      const messagesWithSuggestions =
+        messageRepository.findByConversationIdWithSuggestions(sessionId);
 
       res.status(200).json({
         messages: messagesWithSuggestions.map((msg) => ({
@@ -114,7 +110,7 @@ export class ChatController {
   async getStatus(
     req: Request<{ sessionId: string }>,
     res: Response<{ isTyping: boolean }>,
-    next: NextFunction,
+    next: NextFunction
   ): Promise<void> {
     try {
       const { sessionId } = req.params;

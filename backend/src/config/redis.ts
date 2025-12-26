@@ -34,8 +34,14 @@ export function getRedisClient(): Redis {
 
 export async function closeRedis(): Promise<void> {
   if (redisClient) {
-    await redisClient.quit();
-    redisClient = null;
+    try {
+      await redisClient.quit();
+    } catch (error) {
+      logger.error('Error closing Redis', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      redisClient = null;
+    }
   }
 }
-

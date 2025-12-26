@@ -34,7 +34,8 @@ async function seedDatabase(): Promise<void> {
       timestamp: new Date(now.getTime() - 60000).toISOString(),
     },
     {
-      content: "Hello! I'd be happy to help you with shipping information. We offer free shipping on orders over $50, with standard delivery taking 5-7 business days. What would you like to know?",
+      content:
+        "Hello! I'd be happy to help you with shipping information. We offer free shipping on orders over $50, with standard delivery taking 5-7 business days. What would you like to know?",
       id: generateId(),
       sender: 'ai',
       timestamp: new Date(now.getTime() - 55000).toISOString(),
@@ -46,7 +47,8 @@ async function seedDatabase(): Promise<void> {
       timestamp: new Date(now.getTime() - 30000).toISOString(),
     },
     {
-      content: "Yes, we do ship internationally! International shipping rates vary by destination and typically take 10-14 business days. You can see the exact shipping cost at checkout after entering your address. Is there a specific country you're shipping to?",
+      content:
+        "Yes, we do ship internationally! International shipping rates vary by destination and typically take 10-14 business days. You can see the exact shipping cost at checkout after entering your address. Is there a specific country you're shipping to?",
       id: generateId(),
       sender: 'ai',
       timestamp: new Date(now.getTime() - 25000).toISOString(),

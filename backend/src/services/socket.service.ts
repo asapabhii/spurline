@@ -1,4 +1,5 @@
-import type { Server } from 'socket.io';
+import type { Server as HttpServer } from 'http';
+import { Server } from 'socket.io';
 
 import { logger } from '../utils/logger.js';
 
@@ -17,32 +18,66 @@ export const SocketEvents = {
 let io: Server | null = null;
 
 /**
- * Initialize Socket.IO server
+ * Initialize Socket.IO server from HTTP server
  */
-export function initSocketService(server: Server): void {
-  io = server;
+export function initSocketServer(httpServer: HttpServer): void {
+  io = new Server(httpServer, {
+    cors: {
+      origin: process.env['NODE_ENV'] === 'production' ? process.env['FRONTEND_URL'] : true,
+      credentials: true,
+    },
+  });
 
   io.on('connection', (socket) => {
     logger.debug('Client connected', { socketId: socket.id });
 
-    socket.on(SocketEvents.JOIN_CONVERSATION, (conversationId: string) => {
-      socket.join(conversationId);
-      logger.debug('Client joined conversation', { 
-        conversationId, 
-        socketId: socket.id,
-      });
+    socket.on(SocketEvents.JOIN_CONVERSATION, (conversationId: unknown) => {
+      try {
+        if (typeof conversationId !== 'string' || !conversationId.trim()) {
+          logger.warn('Invalid conversationId in JOIN_CONVERSATION', { socketId: socket.id });
+          return;
+        }
+        socket.join(conversationId);
+        logger.debug('Client joined conversation', {
+          conversationId,
+          socketId: socket.id,
+        });
+      } catch (error) {
+        logger.error('Error joining conversation', {
+          socketId: socket.id,
+          error: error instanceof Error ? error.message : 'Unknown',
+        });
+      }
     });
 
-    socket.on(SocketEvents.LEAVE_CONVERSATION, (conversationId: string) => {
-      socket.leave(conversationId);
-      logger.debug('Client left conversation', { 
-        conversationId, 
-        socketId: socket.id,
-      });
+    socket.on(SocketEvents.LEAVE_CONVERSATION, (conversationId: unknown) => {
+      try {
+        if (typeof conversationId !== 'string' || !conversationId.trim()) {
+          logger.warn('Invalid conversationId in LEAVE_CONVERSATION', { socketId: socket.id });
+          return;
+        }
+        socket.leave(conversationId);
+        logger.debug('Client left conversation', {
+          conversationId,
+          socketId: socket.id,
+        });
+      } catch (error) {
+        logger.error('Error leaving conversation', {
+          socketId: socket.id,
+          error: error instanceof Error ? error.message : 'Unknown',
+        });
+      }
     });
 
     socket.on('disconnect', () => {
       logger.debug('Client disconnected', { socketId: socket.id });
+    });
+
+    socket.on('error', (error) => {
+      logger.error('Socket error', {
+        socketId: socket.id,
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
     });
   });
 
@@ -50,10 +85,21 @@ export function initSocketService(server: Server): void {
 }
 
 /**
- * Emit to conversation room
+ * Emit socket event to all clients in a conversation room
+ * Wraps emit in try/catch to prevent crashes if connection is closed
  */
 function emit(conversationId: string, event: string, data: unknown): void {
-  io?.to(conversationId).emit(event, data);
+  if (!io) return;
+
+  try {
+    io.to(conversationId).emit(event, data);
+  } catch (error) {
+    logger.error('Failed to emit socket event', {
+      conversationId,
+      event,
+      error: error instanceof Error ? error.message : 'Unknown',
+    });
+  }
 }
 
 /**
@@ -88,9 +134,9 @@ export function emitStreamChunk(conversationId: string, messageId: string, chunk
  * Signal stream ended
  */
 export function emitStreamEnd(
-  conversationId: string, 
-  messageId: string, 
-  suggestions: string[],
+  conversationId: string,
+  messageId: string,
+  suggestions: string[]
 ): void {
   emit(conversationId, SocketEvents.AI_STREAM_END, { messageId, suggestions });
 }

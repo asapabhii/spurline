@@ -6,21 +6,48 @@ export type MessageSender = 'ai' | 'user';
 
 export type Channel = 'instagram' | 'web' | 'whatsapp';
 
+/**
+ * Validate channel value
+ */
+function isValidChannel(value: string): value is Channel {
+  return value === 'instagram' || value === 'web' || value === 'whatsapp';
+}
+
+/**
+ * Validate message sender value
+ */
+function isValidMessageSender(value: string): value is MessageSender {
+  return value === 'ai' || value === 'user';
+}
+
 export class Conversation {
   constructor(
     public readonly id: string,
     public readonly channel: Channel,
     public readonly createdAt: Date,
-    public readonly metadata: Record<string, unknown> | null,
+    public readonly metadata: Record<string, unknown> | null
   ) {}
 
+  /**
+   * Create Conversation from database row
+   * Validates enum values and safely parses JSON metadata
+   */
   static fromRow(row: ConversationRow): Conversation {
-    return new Conversation(
-      row.id,
-      row.channel as Channel,
-      new Date(row.created_at),
-      row.metadata ? JSON.parse(row.metadata) : null,
-    );
+    const channel = isValidChannel(row.channel) ? row.channel : 'web';
+    let metadata: Record<string, unknown> | null = null;
+
+    if (row.metadata) {
+      try {
+        const parsed = JSON.parse(row.metadata);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          metadata = parsed as Record<string, unknown>;
+        }
+      } catch {
+        // Invalid JSON - leave as null
+      }
+    }
+
+    return new Conversation(row.id, channel, new Date(row.created_at), metadata);
   }
 }
 
@@ -30,16 +57,22 @@ export class Message {
     public readonly conversationId: string,
     public readonly content: string,
     public readonly createdAt: Date,
-    public readonly sender: MessageSender,
+    public readonly sender: MessageSender
   ) {}
 
+  /**
+   * Create Message from database row
+   * Validates enum values
+   */
   static fromRow(row: MessageRow): Message {
+    const sender = isValidMessageSender(row.sender) ? row.sender : 'user';
+
     return new Message(
       row.id,
       row.conversation_id,
       row.content,
       new Date(row.created_at),
-      row.sender as MessageSender,
+      sender
     );
   }
 }
@@ -59,4 +92,3 @@ export interface MessageRow {
   id: string;
   sender: string;
 }
-

@@ -17,11 +17,11 @@ const IS_DEV = process.env['NODE_ENV'] === 'development';
  */
 function sanitize(obj: LogContext): LogContext {
   const result: LogContext = {};
-  
+
   for (const [key, value] of Object.entries(obj)) {
     const lower = key.toLowerCase();
-    
-    if (SENSITIVE_KEYS.some(s => lower.includes(s))) {
+
+    if (SENSITIVE_KEYS.some((s) => lower.includes(s))) {
       result[key] = '[REDACTED]';
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
       result[key] = sanitize(value as LogContext);
@@ -29,7 +29,7 @@ function sanitize(obj: LogContext): LogContext {
       result[key] = value;
     }
   }
-  
+
   return result;
 }
 
@@ -64,4 +64,3 @@ export const logger = {
     console.error(format('error', message, context));
   },
 };
-

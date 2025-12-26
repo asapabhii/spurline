@@ -23,4 +23,3 @@ function loadEnvironment(): Environment {
 }
 
 export const env = loadEnvironment();
-

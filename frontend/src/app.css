@@ -34,21 +34,24 @@
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* Chat Dimensions - WIDER */
-  --chat-width: 480px;
-  --chat-height: 650px;
+  --chat-width: 520px;
+  --chat-height: 680px;
 }
 
 /* ===========================================================
    Reset & Base
    =========================================================== */
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -91,7 +94,7 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 
+  box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.5),
     0 4px 16px rgba(0, 0, 0, 0.4);
 }
@@ -136,11 +139,11 @@ textarea:focus-visible {
    Mobile Responsive
    =========================================================== */
 
-@media (max-width: 520px) {
+@media (max-width: 560px) {
   #app {
     padding: 0;
   }
-  
+
   .chat-container {
     width: 100%;
     height: 100%;
@@ -151,7 +154,7 @@ textarea:focus-visible {
 
 @media (min-width: 1200px) {
   :root {
-    --chat-width: 500px;
-    --chat-height: 700px;
+    --chat-width: 560px;
+    --chat-height: 720px;
   }
 }

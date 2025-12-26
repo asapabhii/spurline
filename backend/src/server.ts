@@ -19,10 +19,16 @@ async function main(): Promise<void> {
     await initDatabase();
     logger.info('Database connected');
 
-    getRedisClient();
-    // Redis logs its own connection status
+    // Redis is optional - don't fail if unavailable
+    try {
+      getRedisClient();
+    } catch (error) {
+      logger.warn('Redis initialization failed (continuing without Redis)', {
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
+    }
   } catch (error) {
-    logger.error('Failed to initialize connections', {
+    logger.error('Failed to initialize database', {
       error: error instanceof Error ? error.message : 'Unknown error',
     });
     process.exit(1);
@@ -30,8 +36,21 @@ async function main(): Promise<void> {
 
   // Start server
   httpServer.listen(env.PORT, () => {
-    logger.info(`Server started on port ${env.PORT}`, {
-      environment: env.NODE_ENV,
+    try {
+      logger.info(`Server started on port ${env.PORT}`, {
+        environment: env.NODE_ENV,
+      });
+    } catch (error) {
+      logger.error('Error in server listen callback', {
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
+    }
+  });
+
+  // Handle server errors
+  httpServer.on('error', (error) => {
+    logger.error('HTTP server error', {
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   });
 
@@ -40,7 +59,13 @@ async function main(): Promise<void> {
     logger.info(`${signal} received, shutting down gracefully`);
 
     httpServer.close(() => {
-      logger.info('HTTP server closed');
+      try {
+        logger.info('HTTP server closed');
+      } catch (error) {
+        logger.error('Error in server close callback', {
+          error: error instanceof Error ? error.message : 'Unknown',
+        });
+      }
     });
 
     try {
@@ -58,6 +83,22 @@ async function main(): Promise<void> {
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // Handle unhandled promise rejections
+  process.on('unhandledRejection', (reason, _promise) => {
+    logger.error('Unhandled promise rejection', {
+      reason: reason instanceof Error ? reason.message : String(reason),
+    });
+  });
+
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (error) => {
+    logger.error('Uncaught exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    process.exit(1);
+  });
 }
 
 main().catch((error) => {

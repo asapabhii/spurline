@@ -11,7 +11,7 @@ export class AppError extends Error {
   constructor(
     public readonly statusCode: number,
     public readonly userMessage: string,
-    public readonly errorCode: string = 'INTERNAL_ERROR',
+    public readonly errorCode: string = 'INTERNAL_ERROR'
   ) {
     super(userMessage);
     this.name = 'AppError';
@@ -26,7 +26,7 @@ export class LLMError extends AppError {
     statusCode: number,
     userMessage: string,
     errorCode: string,
-    public readonly isRetryable: boolean = false,
+    public readonly isRetryable: boolean = false
   ) {
     super(statusCode, userMessage, errorCode);
     this.name = 'LLMError';
@@ -37,7 +37,7 @@ export class LLMError extends AppError {
       503,
       'The agent is currently busy. Please try again in a moment.',
       'LLM_RATE_LIMITED',
-      true,
+      true
     );
   }
 
@@ -46,7 +46,7 @@ export class LLMError extends AppError {
       503,
       'The agent is temporarily unavailable. Please try again shortly.',
       'LLM_UNAVAILABLE',
-      true,
+      true
     );
   }
 
@@ -55,7 +55,7 @@ export class LLMError extends AppError {
       504,
       'The response took too long. Please try again with a shorter message.',
       'LLM_TIMEOUT',
-      true,
+      true
     );
   }
 }
@@ -67,7 +67,7 @@ export function errorHandler(
   err: Error,
   _req: Request,
   res: Response<ApiErrorResponse>,
-  _next: NextFunction,
+  _next: NextFunction
 ): void {
   // Log error (without sensitive data)
   logger.error('Request error', {
@@ -101,4 +101,3 @@ export function errorHandler(
     message: 'Something went wrong. Please try again later.',
   });
 }
-
