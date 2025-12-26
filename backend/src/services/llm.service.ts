@@ -36,66 +36,95 @@ export interface LLMService {
 }
 
 /**
+ * OpenAI-compatible message format
+ */
+interface ChatMessage {
+  content: string;
+  role: 'assistant' | 'system' | 'user';
+}
+
+/**
+ * OpenAI-compatible response format
+ */
+interface ChatCompletionResponse {
+  choices: Array<{
+    finish_reason: string;
+    index: number;
+    message: {
+      content: string;
+      role: string;
+    };
+  }>;
+  created: number;
+  id: string;
+  model: string;
+  usage: {
+    completion_tokens: number;
+    prompt_tokens: number;
+    total_tokens: number;
+  };
+}
+
+/**
  * Hugging Face Inference API implementation
- * Uses free tier - be mindful of rate limits
+ * Uses the new router.huggingface.co OpenAI-compatible endpoint
  */
 export class HuggingFaceLLMService implements LLMService {
-  private readonly apiUrl: string;
-  private readonly model: string = 'mistralai/Mistral-7B-Instruct-v0.2';
-  private readonly timeoutMs: number = 30000; // 30 second timeout
-  private readonly maxHistoryMessages: number = 10;
-
-  constructor() {
-    this.apiUrl = `https://api-inference.huggingface.co/models/${this.model}`;
-  }
+  private readonly apiUrl = 'https://router.huggingface.co/v1/chat/completions';
+  private readonly model = 'meta-llama/Llama-3.2-3B-Instruct';
+  private readonly timeoutMs = 30000; // 30 second timeout
+  private readonly maxHistoryMessages = 10;
 
   async generateReply(history: Message[], userMessage: string): Promise<string> {
-    const prompt = this.buildPrompt(history, userMessage);
+    const messages = this.buildMessages(history, userMessage);
 
     try {
-      const response = await this.callHuggingFace(prompt);
-      return this.extractReply(response, prompt);
+      const response = await this.callHuggingFace(messages);
+      return this.extractReply(response);
     } catch (error) {
       return this.handleError(error);
     }
   }
 
-  private buildPrompt(history: Message[], userMessage: string): string {
-    // Take only the most recent messages to avoid context overflow
-    const recentHistory = history.slice(-this.maxHistoryMessages);
+  private buildMessages(history: Message[], userMessage: string): ChatMessage[] {
+    const messages: ChatMessage[] = [];
 
-    // Build conversation history in Mistral instruct format
-    let conversationHistory = '';
+    // System prompt
+    messages.push({
+      content: SYSTEM_PROMPT,
+      role: 'system',
+    });
+
+    // Add recent conversation history
+    const recentHistory = history.slice(-this.maxHistoryMessages);
     for (const msg of recentHistory) {
-      if (msg.sender === 'user') {
-        conversationHistory += `[INST] ${msg.content} [/INST]\n`;
-      } else {
-        conversationHistory += `${msg.content}\n`;
-      }
+      messages.push({
+        content: msg.content,
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+      });
     }
 
-    // Format: <s>[INST] System prompt + conversation [/INST]
-    const prompt = `<s>[INST] ${SYSTEM_PROMPT}
+    // Add current user message
+    messages.push({
+      content: userMessage,
+      role: 'user',
+    });
 
-${conversationHistory}[INST] ${userMessage} [/INST]`;
-
-    return prompt;
+    return messages;
   }
 
-  private async callHuggingFace(prompt: string): Promise<unknown> {
+  private async callHuggingFace(messages: ChatMessage[]): Promise<ChatCompletionResponse> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
       const response = await fetch(this.apiUrl, {
         body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 256,
-            return_full_text: false,
-            temperature: 0.7,
-            top_p: 0.9,
-          },
+          max_tokens: 256,
+          messages,
+          model: this.model,
+          temperature: 0.7,
+          top_p: 0.9,
         }),
         headers: {
           'Authorization': `Bearer ${env.HUGGINGFACE_API_TOKEN}`,
@@ -127,7 +156,7 @@ ${conversationHistory}[INST] ${userMessage} [/INST]`;
         throw new Error(`HuggingFace API error: ${response.status}`);
       }
 
-      return await response.json();
+      return await response.json() as ChatCompletionResponse;
     } catch (error) {
       clearTimeout(timeoutId);
 
@@ -144,24 +173,17 @@ ${conversationHistory}[INST] ${userMessage} [/INST]`;
     }
   }
 
-  private extractReply(response: unknown, prompt: string): string {
-    // HuggingFace returns array of generated texts
-    if (Array.isArray(response) && response.length > 0) {
-      const generated = response[0] as { generated_text?: string };
-      if (generated.generated_text) {
-        // Clean up the response - remove the prompt if included
-        let reply = generated.generated_text;
-        
-        // Remove any remaining instruction tags
-        reply = reply.replace(/\[INST\]|\[\/INST\]|<s>|<\/s>/g, '').trim();
-        
-        // If response is empty or just whitespace, return fallback
-        if (!reply) {
-          return this.getFallbackMessage();
-        }
-        
-        return reply;
+  private extractReply(response: ChatCompletionResponse): string {
+    const firstChoice = response.choices?.[0];
+    
+    if (firstChoice?.message?.content) {
+      const reply = firstChoice.message.content.trim();
+      
+      if (!reply) {
+        return this.getFallbackMessage();
       }
+      
+      return reply;
     }
 
     logger.warn('Unexpected HuggingFace response format', { response });
@@ -187,4 +209,3 @@ ${conversationHistory}[INST] ${userMessage} [/INST]`;
 
 // Singleton instance
 export const llmService: LLMService = new HuggingFaceLLMService();
-
