@@ -1,5 +1,5 @@
 import { createApp } from './app.js';
-import { closeDatabase, getDatabase } from './config/database.js';
+import { closeDatabase, initDatabase } from './config/database.js';
 import { env } from './config/environment.js';
 import { closeRedis, getRedisClient } from './config/redis.js';
 import { logger } from './utils/logger.js';
@@ -9,7 +9,7 @@ async function main(): Promise<void> {
 
   // Initialize connections
   try {
-    getDatabase();
+    await initDatabase();
     logger.info('Database connected');
 
     getRedisClient();
@@ -59,4 +59,3 @@ main().catch((error) => {
   });
   process.exit(1);
 });
-

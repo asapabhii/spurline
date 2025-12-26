@@ -1,4 +1,4 @@
-import { getDatabase } from '../config/database.js';
+import { queryOne, runStatement } from '../config/database.js';
 import { Conversation, type ConversationRow } from '../types/domain.types.js';
 import { generateId } from '../utils/id.js';
 
@@ -7,14 +7,13 @@ export class ConversationRepository {
    * Create a new conversation
    */
   create(channel: string = 'web', metadata: Record<string, unknown> | null = null): Conversation {
-    const db = getDatabase();
     const id = generateId();
     const createdAt = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO conversations (id, created_at, channel, metadata)
-      VALUES (?, ?, ?, ?)
-    `).run(id, createdAt, channel, metadata ? JSON.stringify(metadata) : null);
+    runStatement(
+      'INSERT INTO conversations (id, created_at, channel, metadata) VALUES (?, ?, ?, ?)',
+      [id, createdAt, channel, metadata ? JSON.stringify(metadata) : null]
+    );
 
     return new Conversation(
       id,
@@ -28,8 +27,10 @@ export class ConversationRepository {
    * Find conversation by ID
    */
   findById(id: string): Conversation | null {
-    const db = getDatabase();
-    const row = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as ConversationRow | undefined;
+    const row = queryOne<ConversationRow>(
+      'SELECT * FROM conversations WHERE id = ?',
+      [id]
+    );
 
     if (!row) {
       return null;
@@ -42,11 +43,10 @@ export class ConversationRepository {
    * Check if conversation exists
    */
   exists(id: string): boolean {
-    const db = getDatabase();
-    const result = db
-      .prepare('SELECT 1 FROM conversations WHERE id = ?')
-      .get(id);
-    
+    const result = queryOne<{ id: string }>(
+      'SELECT id FROM conversations WHERE id = ?',
+      [id]
+    );
     return result !== undefined;
   }
 
@@ -68,4 +68,3 @@ export class ConversationRepository {
 
 // Singleton instance
 export const conversationRepository = new ConversationRepository();
-

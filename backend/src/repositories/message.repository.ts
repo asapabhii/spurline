@@ -1,4 +1,4 @@
-import { getDatabase } from '../config/database.js';
+import { queryAll, queryOne, runStatement } from '../config/database.js';
 import { Message, type MessageRow, type MessageSender } from '../types/domain.types.js';
 import { generateId } from '../utils/id.js';
 
@@ -7,14 +7,13 @@ export class MessageRepository {
    * Create a new message
    */
   create(conversationId: string, content: string, sender: MessageSender): Message {
-    const db = getDatabase();
     const id = generateId();
     const createdAt = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO messages (id, conversation_id, sender, content, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, conversationId, sender, content, createdAt);
+    runStatement(
+      'INSERT INTO messages (id, conversation_id, sender, content, created_at) VALUES (?, ?, ?, ?, ?)',
+      [id, conversationId, sender, content, createdAt]
+    );
 
     return new Message(id, conversationId, content, new Date(createdAt), sender);
   }
@@ -24,29 +23,25 @@ export class MessageRepository {
    * @param limit Maximum number of messages to return (most recent)
    */
   findByConversationId(conversationId: string, limit?: number): Message[] {
-    const db = getDatabase();
-    
-    let query = `
-      SELECT * FROM messages 
-      WHERE conversation_id = ? 
-      ORDER BY created_at ASC
-    `;
+    let rows: MessageRow[];
 
     if (limit) {
       // Get the most recent N messages, but return in ASC order
-      query = `
-        SELECT * FROM (
+      rows = queryAll<MessageRow>(
+        `SELECT * FROM (
           SELECT * FROM messages 
           WHERE conversation_id = ? 
           ORDER BY created_at DESC 
           LIMIT ?
-        ) ORDER BY created_at ASC
-      `;
+        ) ORDER BY created_at ASC`,
+        [conversationId, limit]
+      );
+    } else {
+      rows = queryAll<MessageRow>(
+        'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC',
+        [conversationId]
+      );
     }
-
-    const rows = limit
-      ? (db.prepare(query).all(conversationId, limit) as MessageRow[])
-      : (db.prepare(query).all(conversationId) as MessageRow[]);
 
     return rows.map((row) => Message.fromRow(row));
   }
@@ -55,25 +50,21 @@ export class MessageRepository {
    * Count messages in a conversation
    */
   countByConversationId(conversationId: string): number {
-    const db = getDatabase();
-    const result = db
-      .prepare('SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?')
-      .get(conversationId) as { count: number };
-    
-    return result.count;
+    const result = queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?',
+      [conversationId]
+    );
+    return result?.count ?? 0;
   }
 
   /**
    * Get the most recent message in a conversation
    */
   findLatest(conversationId: string): Message | null {
-    const db = getDatabase();
-    const row = db.prepare(`
-      SELECT * FROM messages 
-      WHERE conversation_id = ? 
-      ORDER BY created_at DESC 
-      LIMIT 1
-    `).get(conversationId) as MessageRow | undefined;
+    const row = queryOne<MessageRow>(
+      'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1',
+      [conversationId]
+    );
 
     if (!row) {
       return null;
@@ -85,4 +76,3 @@ export class MessageRepository {
 
 // Singleton instance
 export const messageRepository = new MessageRepository();
-
