@@ -8,7 +8,7 @@
       <span class="avatar-icon">💬</span>
     </div>
     <div class="header-text">
-      <h1 class="title">Spurline Support</h1>
+      <h1 class="title">Spurline Agent</h1>
       <p class="subtitle">AI-powered assistance</p>
     </div>
   </div>

@@ -18,7 +18,7 @@ DOMAIN KNOWLEDGE:
 /**
  * System prompt for the support agent
  */
-const SYSTEM_PROMPT = `You are a helpful customer support agent for a small e-commerce brand called "Spurline Shop".
+const SYSTEM_PROMPT = `You are a helpful AI agent for "Spurline".
 Answer clearly, concisely, and accurately.
 If you do not know something, say so honestly.
 Do not hallucinate policies or make up information.

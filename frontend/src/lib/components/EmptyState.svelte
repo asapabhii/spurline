@@ -4,7 +4,7 @@
 
 <div class="empty-state">
   <div class="empty-icon">👋</div>
-  <h2 class="empty-title">Welcome to Spurline Support</h2>
+  <h2 class="empty-title">Welcome to Spurline Agent</h2>
   <p class="empty-description">
     Hi there! I'm here to help you with any questions about our products, 
     shipping, returns, or anything else. How can I assist you today?
