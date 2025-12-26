@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 
 import { AppError } from '../middleware/error-handler.js';
+import { sanitizeInput, validateMessageContent } from '../middleware/validation.js';
 import { chatService } from '../services/chat.service.js';
 import {
   type ConversationHistoryResponse,
@@ -24,7 +25,7 @@ export class ChatController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      // Validate request body
+      // Validate request body schema
       const validationResult = sendMessageRequestSchema.safeParse(req.body);
       
       if (!validationResult.success) {
@@ -32,10 +33,18 @@ export class ChatController {
         throw new AppError(400, firstError?.message ?? 'Invalid request', 'VALIDATION_ERROR');
       }
 
-      const { message, sessionId } = validationResult.data;
+      const { sessionId } = validationResult.data;
+      
+      // Sanitize and validate message content
+      const sanitizedMessage = sanitizeInput(validationResult.data.message);
+      const contentValidation = validateMessageContent(sanitizedMessage);
+      
+      if (!contentValidation.isValid) {
+        throw new AppError(400, contentValidation.error ?? 'Invalid message', 'VALIDATION_ERROR');
+      }
 
       // Process message through chat service
-      const result = await chatService.sendMessage(sessionId, message);
+      const result = await chatService.sendMessage(sessionId, sanitizedMessage);
 
       // Return response
       res.status(200).json({
