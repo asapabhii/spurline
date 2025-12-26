@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ChatWidget from '$lib/components/ChatWidget.svelte';
-  import { chatActions, sessionId } from '$lib/stores/chat.store';
+  import { chatActions, sessionId, initChatSocket } from '$lib/stores/chat.store';
 
   onMount(() => {
+    // Initialize socket connection
+    initChatSocket();
+    
     // Load existing conversation if session exists
     if ($sessionId) {
       chatActions.loadConversation();
@@ -31,7 +34,7 @@
   .chat-container {
     width: 100%;
     max-width: 480px;
-    height: min(700px, calc(100vh - 2rem));
+    height: min(750px, calc(100vh - 2rem));
     display: flex;
     flex-direction: column;
     border-radius: var(--radius-lg);
@@ -41,4 +44,3 @@
     background: var(--color-bg-secondary);
   }
 </style>
-

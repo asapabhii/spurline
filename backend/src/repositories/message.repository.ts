@@ -2,6 +2,10 @@ import { queryAll, queryOne, runStatement } from '../config/database.js';
 import { Message, type MessageRow, type MessageSender } from '../types/domain.types.js';
 import { generateId } from '../utils/id.js';
 
+export interface MessageWithSuggestions extends Message {
+  suggestions: string[];
+}
+
 export class MessageRepository {
   /**
    * Create a new message
@@ -19,15 +23,49 @@ export class MessageRepository {
   }
 
   /**
+   * Create a placeholder message (for streaming)
+   */
+  createPlaceholder(conversationId: string): string {
+    const id = generateId();
+    const createdAt = new Date().toISOString();
+
+    runStatement(
+      'INSERT INTO messages (id, conversation_id, sender, content, created_at) VALUES (?, ?, ?, ?, ?)',
+      [id, conversationId, 'ai', '', createdAt]
+    );
+
+    return id;
+  }
+
+  /**
+   * Update placeholder with actual content
+   */
+  updatePlaceholder(id: string, content: string, suggestions?: string[]): Message {
+    runStatement(
+      'UPDATE messages SET content = ?, suggestions = ? WHERE id = ?',
+      [content, suggestions ? JSON.stringify(suggestions) : null, id]
+    );
+
+    const row = queryOne<MessageRow & { suggestions?: string }>(
+      'SELECT * FROM messages WHERE id = ?',
+      [id]
+    );
+
+    if (!row) {
+      throw new Error(`Message ${id} not found`);
+    }
+
+    return Message.fromRow(row);
+  }
+
+  /**
    * Get messages for a conversation, ordered by creation time
-   * @param limit Maximum number of messages to return (most recent)
    */
   findByConversationId(conversationId: string, limit?: number): Message[] {
-    let rows: MessageRow[];
+    let rows: (MessageRow & { suggestions?: string })[];
 
     if (limit) {
-      // Get the most recent N messages, but return in ASC order
-      rows = queryAll<MessageRow>(
+      rows = queryAll<MessageRow & { suggestions?: string }>(
         `SELECT * FROM (
           SELECT * FROM messages 
           WHERE conversation_id = ? 
@@ -37,13 +75,28 @@ export class MessageRepository {
         [conversationId, limit]
       );
     } else {
-      rows = queryAll<MessageRow>(
+      rows = queryAll<MessageRow & { suggestions?: string }>(
         'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC',
         [conversationId]
       );
     }
 
     return rows.map((row) => Message.fromRow(row));
+  }
+
+  /**
+   * Get messages with suggestions
+   */
+  findByConversationIdWithSuggestions(conversationId: string): MessageWithSuggestions[] {
+    const rows = queryAll<MessageRow & { suggestions?: string }>(
+      'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC',
+      [conversationId]
+    );
+
+    return rows.map((row) => ({
+      ...Message.fromRow(row),
+      suggestions: row.suggestions ? JSON.parse(row.suggestions) as string[] : [],
+    }));
   }
 
   /**

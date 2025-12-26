@@ -2,6 +2,7 @@ import type {
   ApiError,
   ConversationHistoryResponse,
   ConversationStatusResponse,
+  FeedbackRequest,
   SendMessageRequest,
   SendMessageResponse,
 } from '$lib/types';
@@ -57,7 +58,25 @@ class ApiClient {
   async getStatus(sessionId: string): Promise<ConversationStatusResponse> {
     return this.request<ConversationStatusResponse>(`/${sessionId}/status`);
   }
+
+  /**
+   * Submit feedback on an AI message
+   */
+  async submitFeedback(data: FeedbackRequest): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>('/feedback', {
+      body: JSON.stringify(data),
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Remove feedback from a message
+   */
+  async removeFeedback(messageId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/feedback/${messageId}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const api = new ApiClient();
-

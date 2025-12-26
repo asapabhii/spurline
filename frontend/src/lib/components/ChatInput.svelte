@@ -1,23 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { chatActions, isLoading, isTyping } from '$lib/stores/chat.store';
+  import { chatActions, isLoading, isTyping, streamingMessageId } from '$lib/stores/chat.store';
 
   let inputValue = $state('');
   let inputElement: HTMLTextAreaElement;
 
-  const isDisabled = $derived($isLoading || $isTyping);
+  const isDisabled = $derived($isLoading || $isTyping || $streamingMessageId !== null);
   const canSend = $derived(inputValue.trim().length > 0 && !isDisabled);
-
-  // Listen for quick message events from EmptyState
-  onMount(() => {
-    const handleQuickMessage = (e: CustomEvent<string>) => {
-      inputValue = e.detail;
-      handleSubmit();
-    };
-    
-    window.addEventListener('quick-message', handleQuickMessage as EventListener);
-    return () => window.removeEventListener('quick-message', handleQuickMessage as EventListener);
-  });
+  const charCount = $derived(inputValue.length);
+  const maxChars = 2000;
 
   async function handleSubmit() {
     if (!canSend) return;
@@ -55,17 +45,17 @@
 </script>
 
 <form class="chat-input-form" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
-  <div class="input-container">
+  <div class="input-container" class:disabled={isDisabled}>
     <textarea
       bind:this={inputElement}
       bind:value={inputValue}
       onkeydown={handleKeydown}
       oninput={handleInput}
-      placeholder="Type your message..."
+      placeholder={isDisabled ? "Waiting for response..." : "Type your message..."}
       disabled={isDisabled}
       rows="1"
       class="message-input"
-      maxlength="2000"
+      maxlength={maxChars}
     ></textarea>
     
     <button 
@@ -81,7 +71,14 @@
     </button>
   </div>
   
-  <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
+  <div class="input-footer">
+    <span class="input-hint">Enter to send • Shift+Enter for new line</span>
+    {#if charCount > maxChars * 0.8}
+      <span class="char-count" class:warning={charCount > maxChars * 0.9}>
+        {charCount}/{maxChars}
+      </span>
+    {/if}
+  </div>
 </form>
 
 <style>
@@ -107,6 +104,10 @@
     border-color: var(--color-border-focus);
   }
 
+  .input-container.disabled {
+    opacity: 0.7;
+  }
+
   .message-input {
     flex: 1;
     background: transparent;
@@ -130,7 +131,6 @@
   }
 
   .message-input:disabled {
-    opacity: 0.5;
     cursor: not-allowed;
   }
 
@@ -160,11 +160,25 @@
     cursor: not-allowed;
   }
 
+  .input-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--spacing-xs);
+    padding: 0 var(--spacing-xs);
+  }
+
   .input-hint {
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
-    margin-top: var(--spacing-xs);
-    text-align: center;
+  }
+
+  .char-count {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+
+  .char-count.warning {
+    color: var(--color-error);
   }
 </style>
-

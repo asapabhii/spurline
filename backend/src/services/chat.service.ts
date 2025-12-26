@@ -4,23 +4,31 @@ import type { Conversation, Message } from '../types/domain.types.js';
 import { logger } from '../utils/logger.js';
 
 import { llmService } from './llm.service.js';
+import { 
+  emitAiTypingStart, 
+  emitAiTypingStop, 
+  emitStreamChunk, 
+  emitStreamEnd, 
+  emitStreamStart 
+} from './socket.service.js';
 import { typingService } from './typing.service.js';
 
 export interface SendMessageResult {
   aiMessage: Message;
   conversation: Conversation;
+  suggestions: string[];
   userMessage: Message;
 }
 
 /**
  * Chat orchestration service
- * Coordinates message persistence, LLM calls, and typing indicators
+ * Coordinates message persistence, LLM calls, and real-time updates
  */
 export class ChatService {
   private readonly maxHistoryForLLM = 10;
 
   /**
-   * Process an incoming user message and generate AI response
+   * Process an incoming user message and generate AI response with streaming
    */
   async sendMessage(sessionId: string | undefined, content: string): Promise<SendMessageResult> {
     // Get or create conversation
@@ -34,8 +42,9 @@ export class ChatService {
     // Persist user message
     const userMessage = messageRepository.create(conversation.id, content, 'user');
 
-    // Set typing indicator
+    // Set typing indicators (both Redis and Socket)
     await typingService.setTyping(conversation.id);
+    emitAiTypingStart(conversation.id);
 
     try {
       // Get conversation history for context
@@ -44,14 +53,35 @@ export class ChatService {
         this.maxHistoryForLLM,
       );
 
-      // Generate AI response
-      const aiReply = await llmService.generateReply(history, content);
+      // Create placeholder for AI message
+      const aiMessageId = messageRepository.createPlaceholder(conversation.id);
+      emitStreamStart(conversation.id, aiMessageId);
 
-      // Clear typing indicator
+      let fullContent = '';
+
+      // Generate AI response with streaming
+      const result = await llmService.generateReplyStream(
+        history, 
+        content,
+        (chunk) => {
+          fullContent += chunk;
+          emitStreamChunk(conversation.id, aiMessageId, chunk);
+        }
+      );
+
+      // Clear typing indicators
       await typingService.clearTyping(conversation.id);
+      emitAiTypingStop(conversation.id);
 
-      // Persist AI message
-      const aiMessage = messageRepository.create(conversation.id, aiReply, 'ai');
+      // Update placeholder with full content and suggestions
+      const aiMessage = messageRepository.updatePlaceholder(
+        aiMessageId, 
+        result.content,
+        result.suggestions
+      );
+
+      // Emit stream end with suggestions
+      emitStreamEnd(conversation.id, aiMessageId, result.suggestions);
 
       logger.debug('Message processed successfully', {
         aiMessageId: aiMessage.id,
@@ -62,11 +92,13 @@ export class ChatService {
       return {
         aiMessage,
         conversation,
+        suggestions: result.suggestions,
         userMessage,
       };
     } catch (error) {
       // Always clear typing on error
       await typingService.clearTyping(conversation.id);
+      emitAiTypingStop(conversation.id);
       throw error;
     }
   }
@@ -96,4 +128,3 @@ export class ChatService {
 
 // Singleton instance
 export const chatService = new ChatService();
-

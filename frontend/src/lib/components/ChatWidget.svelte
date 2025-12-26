@@ -2,18 +2,26 @@
   import MessageList from './MessageList.svelte';
   import ChatInput from './ChatInput.svelte';
   import ChatHeader from './ChatHeader.svelte';
+  import DateHeader from './DateHeader.svelte';
   import ErrorBanner from './ErrorBanner.svelte';
-  import { error } from '$lib/stores/chat.store';
+  import Suggestions from './Suggestions.svelte';
+  import { error, suggestions } from '$lib/stores/chat.store';
 </script>
 
 <div class="chat-widget">
   <ChatHeader />
+  <DateHeader />
   
   {#if $error}
     <ErrorBanner message={$error} />
   {/if}
   
   <MessageList />
+  
+  {#if $suggestions.length > 0}
+    <Suggestions />
+  {/if}
+  
   <ChatInput />
 </div>
 
@@ -25,4 +33,3 @@
     background: var(--color-bg-chat);
   }
 </style>
-

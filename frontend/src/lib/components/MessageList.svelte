@@ -3,13 +3,17 @@
   import MessageBubble from './MessageBubble.svelte';
   import TypingIndicator from './TypingIndicator.svelte';
   import EmptyState from './EmptyState.svelte';
-  import { messages, isTyping, isEmpty } from '$lib/stores/chat.store';
+  import { messages, isTyping, isEmpty, streamingMessageId } from '$lib/stores/chat.store';
 
   let messagesContainer: HTMLDivElement;
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change or streaming
   $effect(() => {
-    if ($messages.length > 0 || $isTyping) {
+    const msgCount = $messages.length;
+    const streaming = $streamingMessageId;
+    const typing = $isTyping;
+    
+    if (msgCount > 0 || typing || streaming) {
       tick().then(() => {
         if (messagesContainer) {
           messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -28,7 +32,7 @@
         <MessageBubble {message} />
       {/each}
       
-      {#if $isTyping}
+      {#if $isTyping && !$streamingMessageId}
         <TypingIndicator />
       {/if}
     </div>
@@ -50,4 +54,3 @@
     min-height: 100%;
   }
 </style>
-

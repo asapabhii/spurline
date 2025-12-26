@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { api } from '$lib/services/api';
+import { initSocket, joinConversation, leaveConversation, type StreamChunk, type StreamEnd } from '$lib/services/socket';
 import type { Message } from '$lib/types';
 
 /**
@@ -8,7 +9,6 @@ import type { Message } from '$lib/types';
 function createSessionStore() {
   const STORAGE_KEY = 'spurline_session_id';
   
-  // Initialize from localStorage if available
   const initial = typeof window !== 'undefined' 
     ? localStorage.getItem(STORAGE_KEY) 
     : null;
@@ -59,9 +59,66 @@ export const error = writable<string | null>(null);
 export const isTyping = writable(false);
 
 /**
+ * Current streaming message ID
+ */
+export const streamingMessageId = writable<string | null>(null);
+
+/**
+ * Current suggestions
+ */
+export const suggestions = writable<string[]>([]);
+
+/**
  * Derived store: whether chat is empty
  */
 export const isEmpty = derived(messages, ($messages) => $messages.length === 0);
+
+/**
+ * Initialize socket and set up event handlers
+ */
+export function initChatSocket(): void {
+  initSocket({
+    onAiTyping: (typing) => {
+      isTyping.set(typing);
+    },
+    onStreamStart: ({ messageId }) => {
+      streamingMessageId.set(messageId);
+      // Add placeholder message
+      messages.update((msgs) => [
+        ...msgs,
+        {
+          content: '',
+          createdAt: new Date().toISOString(),
+          id: messageId,
+          sender: 'ai',
+        },
+      ]);
+    },
+    onStreamChunk: ({ messageId, chunk }) => {
+      messages.update((msgs) => 
+        msgs.map((msg) => 
+          msg.id === messageId 
+            ? { ...msg, content: msg.content + chunk }
+            : msg
+        )
+      );
+    },
+    onStreamEnd: ({ messageId, suggestions: newSuggestions }) => {
+      streamingMessageId.set(null);
+      isTyping.set(false);
+      suggestions.set(newSuggestions);
+      
+      // Update message with suggestions
+      messages.update((msgs) => 
+        msgs.map((msg) => 
+          msg.id === messageId 
+            ? { ...msg, suggestions: newSuggestions }
+            : msg
+        )
+      );
+    },
+  });
+}
 
 /**
  * Chat actions
@@ -80,9 +137,16 @@ export const chatActions = {
       
       const response = await api.getConversation(currentSessionId);
       messages.set(response.messages);
-    } catch (e) {
-      // Conversation not found is not an error - just means new session
-      console.debug('No existing conversation found');
+      
+      // Join socket room
+      joinConversation(currentSessionId);
+      
+      // Set suggestions from last AI message
+      const lastAiMessage = [...response.messages].reverse().find(m => m.sender === 'ai');
+      if (lastAiMessage?.suggestions) {
+        suggestions.set(lastAiMessage.suggestions);
+      }
+    } catch {
       messages.set([]);
     } finally {
       isLoading.set(false);
@@ -97,7 +161,10 @@ export const chatActions = {
 
     const currentSessionId = get(sessionId);
     
-    // Optimistically add user message
+    // Clear suggestions
+    suggestions.set([]);
+    
+    // Add user message immediately
     const tempUserMessage: Message = {
       content,
       createdAt: new Date().toISOString(),
@@ -118,27 +185,36 @@ export const chatActions = {
       // Update session ID if new
       if (!currentSessionId || currentSessionId !== response.sessionId) {
         sessionId.set(response.sessionId);
+        joinConversation(response.sessionId);
       }
 
-      // Replace temp message and add AI response
-      messages.update((msgs) => {
-        const filtered = msgs.filter((m) => m.id !== tempUserMessage.id);
-        return [
-          ...filtered,
-          {
-            content,
-            createdAt: tempUserMessage.createdAt,
-            id: `user-${Date.now()}`,
-            sender: 'user' as const,
-          },
+      // Update temp message with real ID
+      messages.update((msgs) => 
+        msgs.map((msg) => 
+          msg.id === tempUserMessage.id 
+            ? { ...msg, id: `user-${Date.now()}` }
+            : msg
+        )
+      );
+
+      // Note: AI message comes via socket streaming
+      // But if streaming didn't work, add the response
+      const currentMsgs = get(messages);
+      const hasAiResponse = currentMsgs.some(m => m.id === response.messageId);
+      
+      if (!hasAiResponse) {
+        messages.update((msgs) => [
+          ...msgs,
           {
             content: response.reply,
             createdAt: response.createdAt,
             id: response.messageId,
-            sender: 'ai' as const,
+            sender: 'ai',
+            suggestions: response.suggestions,
           },
-        ];
-      });
+        ]);
+        suggestions.set(response.suggestions);
+      }
     } catch (e) {
       // Remove optimistic message on error
       messages.update((msgs) => msgs.filter((m) => m.id !== tempUserMessage.id));
@@ -146,6 +222,54 @@ export const chatActions = {
     } finally {
       isTyping.set(false);
     }
+  },
+
+  /**
+   * Submit feedback on an AI message
+   */
+  async submitFeedback(messageId: string, rating: 'up' | 'down'): Promise<void> {
+    const currentSessionId = get(sessionId);
+    if (!currentSessionId) return;
+
+    try {
+      await api.submitFeedback({
+        messageId,
+        rating,
+        sessionId: currentSessionId,
+      });
+
+      messages.update((msgs) =>
+        msgs.map((msg) =>
+          msg.id === messageId ? { ...msg, feedback: rating } : msg
+        )
+      );
+    } catch (e) {
+      error.set(e instanceof Error ? e.message : 'Failed to submit feedback.');
+    }
+  },
+
+  /**
+   * Remove feedback from a message
+   */
+  async removeFeedback(messageId: string): Promise<void> {
+    try {
+      await api.removeFeedback(messageId);
+
+      messages.update((msgs) =>
+        msgs.map((msg) =>
+          msg.id === messageId ? { ...msg, feedback: undefined } : msg
+        )
+      );
+    } catch (e) {
+      error.set(e instanceof Error ? e.message : 'Failed to remove feedback.');
+    }
+  },
+
+  /**
+   * Send a suggested question
+   */
+  async sendSuggestion(suggestion: string): Promise<void> {
+    await this.sendMessage(suggestion);
   },
 
   /**
@@ -159,9 +283,13 @@ export const chatActions = {
    * Start new conversation
    */
   newConversation(): void {
+    const currentSessionId = get(sessionId);
+    if (currentSessionId) {
+      leaveConversation(currentSessionId);
+    }
     sessionId.clear();
     messages.set([]);
+    suggestions.set([]);
     error.set(null);
   },
 };
-

@@ -3,8 +3,7 @@ import { Router } from 'express';
 import { chatController } from '../controllers/chat.controller.js';
 
 /**
- * Chat routes - HTTP contracts only
- * No business logic here, just route definitions
+ * Chat routes
  */
 export function createChatRouter(): Router {
   const router = Router();
@@ -12,6 +11,16 @@ export function createChatRouter(): Router {
   // POST /api/chat/message - Send message and get AI reply
   router.post('/message', (req, res, next) => 
     chatController.sendMessage(req, res, next),
+  );
+
+  // POST /api/chat/feedback - Submit feedback on AI message
+  router.post('/feedback', (req, res, next) => 
+    chatController.submitFeedback(req, res, next),
+  );
+
+  // DELETE /api/chat/feedback/:messageId - Remove feedback
+  router.delete('/feedback/:messageId', (req, res, next) => 
+    chatController.removeFeedback(req, res, next),
   );
 
   // GET /api/chat/:sessionId - Get conversation history
@@ -26,4 +35,3 @@ export function createChatRouter(): Router {
 
   return router;
 }
-

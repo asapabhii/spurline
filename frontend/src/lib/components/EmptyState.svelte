@@ -1,27 +1,33 @@
 <script lang="ts">
-  // Empty state when no messages
+  import { chatActions, isTyping } from '$lib/stores/chat.store';
+
+  const quickQuestions = [
+    'What are your shipping options?',
+    'What is your return policy?',
+    'What are your support hours?',
+  ];
 </script>
 
 <div class="empty-state">
   <div class="empty-icon">👋</div>
   <h2 class="empty-title">Welcome to Spurline Agent</h2>
   <p class="empty-description">
-    Hi there! I'm here to help you with any questions about our products, 
-    shipping, returns, or anything else. How can I assist you today?
+    Hi there! I'm here to help you with any questions. 
+    How can I assist you today?
   </p>
   
   <div class="quick-actions">
     <p class="quick-label">Quick questions:</p>
     <div class="quick-buttons">
-      <button class="quick-btn" onclick={() => window.dispatchEvent(new CustomEvent('quick-message', { detail: 'What are your shipping options?' }))}>
-        Shipping info
-      </button>
-      <button class="quick-btn" onclick={() => window.dispatchEvent(new CustomEvent('quick-message', { detail: 'What is your return policy?' }))}>
-        Return policy
-      </button>
-      <button class="quick-btn" onclick={() => window.dispatchEvent(new CustomEvent('quick-message', { detail: 'What are your support hours?' }))}>
-        Support hours
-      </button>
+      {#each quickQuestions as question}
+        <button 
+          class="quick-btn" 
+          onclick={() => chatActions.sendSuggestion(question)}
+          disabled={$isTyping}
+        >
+          {question.replace('What are your ', '').replace('What is your ', '').replace('?', '')}
+        </button>
+      {/each}
     </div>
   </div>
 </div>
@@ -96,12 +102,17 @@
     font-size: var(--font-size-xs);
     cursor: pointer;
     transition: all var(--transition-fast);
+    text-transform: capitalize;
   }
 
-  .quick-btn:hover {
+  .quick-btn:hover:not(:disabled) {
     background: var(--color-accent);
     border-color: var(--color-accent);
     color: white;
   }
-</style>
 
+  .quick-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+</style>

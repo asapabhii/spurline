@@ -1,11 +1,18 @@
+import { createServer } from 'http';
+
 import { createApp } from './app.js';
 import { closeDatabase, initDatabase } from './config/database.js';
 import { env } from './config/environment.js';
 import { closeRedis, getRedisClient } from './config/redis.js';
+import { initSocketServer } from './services/socket.service.js';
 import { logger } from './utils/logger.js';
 
 async function main(): Promise<void> {
   const app = createApp();
+  const httpServer = createServer(app);
+
+  // Initialize Socket.IO
+  initSocketServer(httpServer);
 
   // Initialize connections
   try {
@@ -22,7 +29,7 @@ async function main(): Promise<void> {
   }
 
   // Start server
-  const server = app.listen(env.PORT, () => {
+  httpServer.listen(env.PORT, () => {
     logger.info(`Server started on port ${env.PORT}`, {
       environment: env.NODE_ENV,
     });
@@ -32,7 +39,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     logger.info(`${signal} received, shutting down gracefully`);
 
-    server.close(() => {
+    httpServer.close(() => {
       logger.info('HTTP server closed');
     });
 

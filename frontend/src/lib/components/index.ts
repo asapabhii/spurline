@@ -1,9 +1,10 @@
 export { default as ChatHeader } from './ChatHeader.svelte';
 export { default as ChatInput } from './ChatInput.svelte';
 export { default as ChatWidget } from './ChatWidget.svelte';
+export { default as DateHeader } from './DateHeader.svelte';
 export { default as EmptyState } from './EmptyState.svelte';
 export { default as ErrorBanner } from './ErrorBanner.svelte';
 export { default as MessageBubble } from './MessageBubble.svelte';
 export { default as MessageList } from './MessageList.svelte';
+export { default as Suggestions } from './Suggestions.svelte';
 export { default as TypingIndicator } from './TypingIndicator.svelte';
-

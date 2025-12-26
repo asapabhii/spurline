@@ -24,15 +24,21 @@ If you do not know something, say so honestly.
 Do not hallucinate policies or make up information.
 Be friendly but professional.
 Keep responses brief - aim for 1-3 sentences when possible.
+IMPORTANT: Respond in the SAME LANGUAGE as the user's message.
 
 ${DOMAIN_KNOWLEDGE}`;
 
 /**
  * LLM Service interface for abstraction
- * Allows swapping providers (OpenAI, Anthropic, local) with minimal changes
  */
 export interface LLMService {
   generateReply(history: Message[], userMessage: string): Promise<string>;
+  generateReplyStream(
+    history: Message[], 
+    userMessage: string, 
+    onChunk: (chunk: string) => void
+  ): Promise<{ content: string; suggestions: string[] }>;
+  generateSuggestions(history: Message[], lastResponse: string): Promise<string[]>;
 }
 
 /**
@@ -44,45 +50,67 @@ interface ChatMessage {
 }
 
 /**
- * OpenAI-compatible response format
- */
-interface ChatCompletionResponse {
-  choices: Array<{
-    finish_reason: string;
-    index: number;
-    message: {
-      content: string;
-      role: string;
-    };
-  }>;
-  created: number;
-  id: string;
-  model: string;
-  usage: {
-    completion_tokens: number;
-    prompt_tokens: number;
-    total_tokens: number;
-  };
-}
-
-/**
- * Hugging Face Inference API implementation
- * Uses the new router.huggingface.co OpenAI-compatible endpoint
+ * Hugging Face Inference API implementation with streaming
  */
 export class HuggingFaceLLMService implements LLMService {
   private readonly apiUrl = 'https://router.huggingface.co/v1/chat/completions';
   private readonly model = 'meta-llama/Llama-3.2-3B-Instruct';
-  private readonly timeoutMs = 30000; // 30 second timeout
+  private readonly timeoutMs = 60000; // 60 second timeout for streaming
   private readonly maxHistoryMessages = 10;
 
   async generateReply(history: Message[], userMessage: string): Promise<string> {
+    const result = await this.generateReplyStream(history, userMessage, () => {});
+    return result.content;
+  }
+
+  async generateReplyStream(
+    history: Message[], 
+    userMessage: string,
+    onChunk: (chunk: string) => void
+  ): Promise<{ content: string; suggestions: string[] }> {
     const messages = this.buildMessages(history, userMessage);
 
     try {
-      const response = await this.callHuggingFace(messages);
-      return this.extractReply(response);
+      const content = await this.callHuggingFaceStream(messages, onChunk);
+      
+      // Generate suggestions after main response
+      const suggestions = await this.generateSuggestions(history, content);
+      
+      return { content, suggestions };
     } catch (error) {
       return this.handleError(error);
+    }
+  }
+
+  async generateSuggestions(history: Message[], lastResponse: string): Promise<string[]> {
+    try {
+      const suggestionPrompt: ChatMessage[] = [
+        {
+          content: `Based on this conversation, generate exactly 3 brief follow-up questions the user might ask. 
+Return ONLY a JSON array of 3 strings, nothing else. Example: ["Question 1?", "Question 2?", "Question 3?"]`,
+          role: 'system',
+        },
+        {
+          content: `Last AI response: "${lastResponse.slice(0, 200)}"`,
+          role: 'user',
+        },
+      ];
+
+      const response = await this.callHuggingFace(suggestionPrompt, false);
+      
+      // Parse JSON array from response
+      const match = response.match(/\[[\s\S]*?\]/);
+      if (match) {
+        const parsed = JSON.parse(match[0]) as string[];
+        return parsed.slice(0, 3);
+      }
+      
+      return [];
+    } catch (error) {
+      logger.warn('Failed to generate suggestions', { 
+        error: error instanceof Error ? error.message : 'Unknown' 
+      });
+      return [];
     }
   }
 
@@ -113,7 +141,7 @@ export class HuggingFaceLLMService implements LLMService {
     return messages;
   }
 
-  private async callHuggingFace(messages: ChatMessage[]): Promise<ChatCompletionResponse> {
+  private async callHuggingFace(messages: ChatMessage[], stream: boolean = false): Promise<string> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -123,6 +151,7 @@ export class HuggingFaceLLMService implements LLMService {
           max_tokens: 256,
           messages,
           model: this.model,
+          stream,
           temperature: 0.7,
           top_p: 0.9,
         }),
@@ -135,28 +164,85 @@ export class HuggingFaceLLMService implements LLMService {
       });
 
       clearTimeout(timeoutId);
+      this.handleResponseErrors(response);
 
-      // Handle rate limiting (429) and service unavailable (503)
-      if (response.status === 429) {
-        logger.warn('HuggingFace rate limited');
-        throw LLMError.rateLimited();
+      const data = await response.json() as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      
+      return data.choices?.[0]?.message?.content?.trim() ?? '';
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  }
+
+  private async callHuggingFaceStream(
+    messages: ChatMessage[], 
+    onChunk: (chunk: string) => void
+  ): Promise<string> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(this.apiUrl, {
+        body: JSON.stringify({
+          max_tokens: 512,
+          messages,
+          model: this.model,
+          stream: true,
+          temperature: 0.7,
+          top_p: 0.9,
+        }),
+        headers: {
+          'Authorization': `Bearer ${env.HUGGINGFACE_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      this.handleResponseErrors(response);
+
+      // Read streaming response
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
       }
 
-      if (response.status === 503) {
-        logger.warn('HuggingFace service unavailable (model loading)');
-        throw LLMError.serviceUnavailable();
+      const decoder = new TextDecoder();
+      let fullContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data) as {
+                choices: Array<{ delta: { content?: string } }>;
+              };
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                fullContent += content;
+                onChunk(content);
+              }
+            } catch {
+              // Skip invalid JSON
+            }
+          }
+        }
       }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error('HuggingFace API error', { 
-          error: errorText,
-          status: response.status, 
-        });
-        throw new Error(`HuggingFace API error: ${response.status}`);
-      }
-
-      return await response.json() as ChatCompletionResponse;
+      return fullContent.trim();
     } catch (error) {
       clearTimeout(timeoutId);
 
@@ -173,21 +259,21 @@ export class HuggingFaceLLMService implements LLMService {
     }
   }
 
-  private extractReply(response: ChatCompletionResponse): string {
-    const firstChoice = response.choices?.[0];
-    
-    if (firstChoice?.message?.content) {
-      const reply = firstChoice.message.content.trim();
-      
-      if (!reply) {
-        return this.getFallbackMessage();
-      }
-      
-      return reply;
+  private handleResponseErrors(response: Response): void {
+    if (response.status === 429) {
+      logger.warn('HuggingFace rate limited');
+      throw LLMError.rateLimited();
     }
 
-    logger.warn('Unexpected HuggingFace response format', { response });
-    return this.getFallbackMessage();
+    if (response.status === 503) {
+      logger.warn('HuggingFace service unavailable');
+      throw LLMError.serviceUnavailable();
+    }
+
+    if (!response.ok) {
+      logger.error('HuggingFace API error', { status: response.status });
+      throw new Error(`HuggingFace API error: ${response.status}`);
+    }
   }
 
   private handleError(error: unknown): never {
@@ -200,10 +286,6 @@ export class HuggingFaceLLMService implements LLMService {
     });
 
     throw LLMError.serviceUnavailable();
-  }
-
-  private getFallbackMessage(): string {
-    return "I'm sorry, I'm having trouble understanding right now. Could you please rephrase your question?";
   }
 }
 
