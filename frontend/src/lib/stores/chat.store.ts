@@ -1,13 +1,23 @@
 import { writable, derived, get } from 'svelte/store';
 import { api } from '$lib/services/api';
-import { initSocket, joinConversation, leaveConversation, type StreamChunk, type StreamEnd } from '$lib/services/socket';
+import { 
+  initSocket, 
+  joinConversation, 
+  leaveConversation, 
+  type StreamChunk, 
+  type StreamEnd,
+} from '$lib/services/socket';
 import type { Message } from '$lib/types';
 
+// ============================================================
+// STORES
+// ============================================================
+
 /**
- * Session ID management - persisted to localStorage
+ * Session ID with localStorage persistence
  */
 function createSessionStore() {
-  const STORAGE_KEY = 'spurline_session_id';
+  const STORAGE_KEY = 'spurline_session';
   
   const initial = typeof window !== 'undefined' 
     ? localStorage.getItem(STORAGE_KEY) 
@@ -19,11 +29,7 @@ function createSessionStore() {
     subscribe,
     set: (value: string | null) => {
       if (typeof window !== 'undefined') {
-        if (value) {
-          localStorage.setItem(STORAGE_KEY, value);
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
+        value ? localStorage.setItem(STORAGE_KEY, value) : localStorage.removeItem(STORAGE_KEY);
       }
       set(value);
     },
@@ -37,53 +43,27 @@ function createSessionStore() {
 }
 
 export const sessionId = createSessionStore();
-
-/**
- * Messages store
- */
 export const messages = writable<Message[]>([]);
-
-/**
- * Loading state
- */
 export const isLoading = writable(false);
-
-/**
- * Error state
- */
 export const error = writable<string | null>(null);
-
-/**
- * Typing indicator state
- */
 export const isTyping = writable(false);
-
-/**
- * Current streaming message ID
- */
 export const streamingMessageId = writable<string | null>(null);
-
-/**
- * Current suggestions
- */
 export const suggestions = writable<string[]>([]);
 
-/**
- * Derived store: whether chat is empty
- */
-export const isEmpty = derived(messages, ($messages) => $messages.length === 0);
+// Derived stores
+export const isEmpty = derived(messages, ($m) => $m.length === 0);
+export const isStreaming = derived(streamingMessageId, ($id) => $id !== null);
 
-/**
- * Initialize socket and set up event handlers
- */
+// ============================================================
+// SOCKET INITIALIZATION
+// ============================================================
+
 export function initChatSocket(): void {
   initSocket({
-    onAiTyping: (typing) => {
-      isTyping.set(typing);
-    },
+    onAiTyping: (typing) => isTyping.set(typing),
+    
     onStreamStart: ({ messageId }) => {
       streamingMessageId.set(messageId);
-      // Add placeholder message
       messages.update((msgs) => [
         ...msgs,
         {
@@ -94,57 +74,48 @@ export function initChatSocket(): void {
         },
       ]);
     },
-    onStreamChunk: ({ messageId, chunk }) => {
+    
+    onStreamChunk: ({ messageId, chunk }: StreamChunk) => {
       messages.update((msgs) => 
-        msgs.map((msg) => 
-          msg.id === messageId 
-            ? { ...msg, content: msg.content + chunk }
-            : msg
-        )
+        msgs.map((m) => m.id === messageId ? { ...m, content: m.content + chunk } : m)
       );
     },
-    onStreamEnd: ({ messageId, suggestions: newSuggestions }) => {
+    
+    onStreamEnd: ({ messageId, suggestions: newSuggestions }: StreamEnd) => {
       streamingMessageId.set(null);
       isTyping.set(false);
       suggestions.set(newSuggestions);
-      
-      // Update message with suggestions
       messages.update((msgs) => 
-        msgs.map((msg) => 
-          msg.id === messageId 
-            ? { ...msg, suggestions: newSuggestions }
-            : msg
-        )
+        msgs.map((m) => m.id === messageId ? { ...m, suggestions: newSuggestions } : m)
       );
     },
   });
 }
 
-/**
- * Chat actions
- */
+// ============================================================
+// ACTIONS
+// ============================================================
+
 export const chatActions = {
   /**
-   * Load existing conversation from backend
+   * Load existing conversation
    */
   async loadConversation(): Promise<void> {
-    const currentSessionId = get(sessionId);
-    if (!currentSessionId) return;
+    const sid = get(sessionId);
+    if (!sid) return;
 
     try {
       isLoading.set(true);
       error.set(null);
       
-      const response = await api.getConversation(currentSessionId);
+      const response = await api.getConversation(sid);
       messages.set(response.messages);
-      
-      // Join socket room
-      joinConversation(currentSessionId);
+      joinConversation(sid);
       
       // Set suggestions from last AI message
-      const lastAiMessage = [...response.messages].reverse().find(m => m.sender === 'ai');
-      if (lastAiMessage?.suggestions) {
-        suggestions.set(lastAiMessage.suggestions);
+      const lastAi = [...response.messages].reverse().find(m => m.sender === 'ai');
+      if (lastAi?.suggestions?.length) {
+        suggestions.set(lastAi.suggestions);
       }
     } catch {
       messages.set([]);
@@ -154,55 +125,50 @@ export const chatActions = {
   },
 
   /**
-   * Send a message and get AI response
+   * Send a message
    */
   async sendMessage(content: string): Promise<void> {
-    if (!content.trim()) return;
+    const trimmed = content.trim();
+    if (!trimmed) return;
 
-    const currentSessionId = get(sessionId);
+    const sid = get(sessionId);
     
-    // Clear suggestions
+    // Clear previous suggestions
     suggestions.set([]);
     
-    // Add user message immediately
-    const tempUserMessage: Message = {
-      content,
+    // Optimistic user message
+    const tempId = `temp-${Date.now()}`;
+    const userMsg: Message = {
+      content: trimmed,
       createdAt: new Date().toISOString(),
-      id: `temp-${Date.now()}`,
+      id: tempId,
       sender: 'user',
     };
     
-    messages.update((msgs) => [...msgs, tempUserMessage]);
+    messages.update((msgs) => [...msgs, userMsg]);
     isTyping.set(true);
     error.set(null);
 
     try {
       const response = await api.sendMessage({
-        message: content,
-        sessionId: currentSessionId ?? undefined,
+        message: trimmed,
+        sessionId: sid ?? undefined,
       });
 
-      // Update session ID if new
-      if (!currentSessionId || currentSessionId !== response.sessionId) {
+      // Update session if new
+      if (!sid || sid !== response.sessionId) {
         sessionId.set(response.sessionId);
         joinConversation(response.sessionId);
       }
 
-      // Update temp message with real ID
+      // Update temp message ID
       messages.update((msgs) => 
-        msgs.map((msg) => 
-          msg.id === tempUserMessage.id 
-            ? { ...msg, id: `user-${Date.now()}` }
-            : msg
-        )
+        msgs.map((m) => m.id === tempId ? { ...m, id: `user-${Date.now()}` } : m)
       );
 
-      // Note: AI message comes via socket streaming
-      // But if streaming didn't work, add the response
+      // If streaming didn't add the AI message, add it now
       const currentMsgs = get(messages);
-      const hasAiResponse = currentMsgs.some(m => m.id === response.messageId);
-      
-      if (!hasAiResponse) {
+      if (!currentMsgs.some(m => m.id === response.messageId)) {
         messages.update((msgs) => [
           ...msgs,
           {
@@ -216,60 +182,18 @@ export const chatActions = {
         suggestions.set(response.suggestions);
       }
     } catch (e) {
-      // Remove optimistic message on error
-      messages.update((msgs) => msgs.filter((m) => m.id !== tempUserMessage.id));
-      error.set(e instanceof Error ? e.message : 'Failed to send message. Please try again.');
+      messages.update((msgs) => msgs.filter((m) => m.id !== tempId));
+      error.set(e instanceof Error ? e.message : 'Failed to send message');
     } finally {
       isTyping.set(false);
     }
   },
 
   /**
-   * Submit feedback on an AI message
-   */
-  async submitFeedback(messageId: string, rating: 'up' | 'down'): Promise<void> {
-    const currentSessionId = get(sessionId);
-    if (!currentSessionId) return;
-
-    try {
-      await api.submitFeedback({
-        messageId,
-        rating,
-        sessionId: currentSessionId,
-      });
-
-      messages.update((msgs) =>
-        msgs.map((msg) =>
-          msg.id === messageId ? { ...msg, feedback: rating } : msg
-        )
-      );
-    } catch (e) {
-      error.set(e instanceof Error ? e.message : 'Failed to submit feedback.');
-    }
-  },
-
-  /**
-   * Remove feedback from a message
-   */
-  async removeFeedback(messageId: string): Promise<void> {
-    try {
-      await api.removeFeedback(messageId);
-
-      messages.update((msgs) =>
-        msgs.map((msg) =>
-          msg.id === messageId ? { ...msg, feedback: undefined } : msg
-        )
-      );
-    } catch (e) {
-      error.set(e instanceof Error ? e.message : 'Failed to remove feedback.');
-    }
-  },
-
-  /**
    * Send a suggested question
    */
-  async sendSuggestion(suggestion: string): Promise<void> {
-    await this.sendMessage(suggestion);
+  sendSuggestion(text: string): Promise<void> {
+    return this.sendMessage(text);
   },
 
   /**
@@ -283,10 +207,9 @@ export const chatActions = {
    * Start new conversation
    */
   newConversation(): void {
-    const currentSessionId = get(sessionId);
-    if (currentSessionId) {
-      leaveConversation(currentSessionId);
-    }
+    const sid = get(sessionId);
+    if (sid) leaveConversation(sid);
+    
     sessionId.clear();
     messages.set([]);
     suggestions.set([]);

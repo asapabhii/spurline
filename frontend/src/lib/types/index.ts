@@ -1,11 +1,10 @@
 /**
- * Shared types for the frontend
+ * Core domain types for Spurline Agent
  */
 
 export interface Message {
   content: string;
   createdAt: string;
-  feedback?: 'down' | 'up';
   id: string;
   sender: 'ai' | 'user';
   suggestions?: string[];
@@ -29,23 +28,13 @@ export interface ConversationHistoryResponse {
   sessionId: string;
 }
 
-export interface ConversationStatusResponse {
-  isTyping: boolean;
-}
-
-export interface FeedbackRequest {
-  messageId: string;
-  rating: 'down' | 'up';
-  sessionId: string;
-}
-
 export interface ApiError {
   error: string;
   message: string;
 }
 
 /**
- * Socket events
+ * WebSocket event constants
  */
 export const SocketEvents = {
   AI_STREAM_CHUNK: 'ai_stream_chunk',
@@ -54,6 +43,6 @@ export const SocketEvents = {
   AI_TYPING: 'ai_typing',
   JOIN_CONVERSATION: 'join_conversation',
   LEAVE_CONVERSATION: 'leave_conversation',
-  MESSAGE_RECEIVED: 'message_received',
-  USER_TYPING: 'user_typing',
 } as const;
+
+export type SocketEventType = typeof SocketEvents[keyof typeof SocketEvents];

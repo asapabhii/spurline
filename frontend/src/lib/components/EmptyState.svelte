@@ -1,117 +1,81 @@
 <script lang="ts">
   import { chatActions, isTyping } from '$lib/stores/chat.store';
 
-  const quickQuestions = [
-    'What are your shipping options?',
-    'What is your return policy?',
-    'What are your support hours?',
+  const questions = [
+    'Shipping options',
+    'Return policy',
+    'Track order',
   ];
 </script>
 
-<div class="empty-state">
-  <div class="empty-icon">👋</div>
-  <h2 class="empty-title">Welcome to Spurline Agent</h2>
-  <p class="empty-description">
-    Hi there! I'm here to help you with any questions. 
-    How can I assist you today?
-  </p>
+<div class="empty">
+  <div class="icon">💬</div>
+  <h2>Spurline Agent</h2>
+  <p>How can I help you today?</p>
   
-  <div class="quick-actions">
-    <p class="quick-label">Quick questions:</p>
-    <div class="quick-buttons">
-      {#each quickQuestions as question}
-        <button 
-          class="quick-btn" 
-          onclick={() => chatActions.sendSuggestion(question)}
-          disabled={$isTyping}
-        >
-          {question.replace('What are your ', '').replace('What is your ', '').replace('?', '')}
-        </button>
-      {/each}
-    </div>
+  <div class="quick">
+    {#each questions as q}
+      <button onclick={() => chatActions.sendSuggestion(q)} disabled={$isTyping}>
+        {q}
+      </button>
+    {/each}
   </div>
 </div>
 
 <style>
-  .empty-state {
+  .empty {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
-    padding: var(--spacing-xl);
+    padding: 40px 20px;
     height: 100%;
   }
 
-  .empty-icon {
-    font-size: 3rem;
-    margin-bottom: var(--spacing-md);
-    animation: wave 2s ease-in-out infinite;
+  .icon {
+    font-size: 48px;
+    margin-bottom: 16px;
   }
 
-  @keyframes wave {
-    0%, 100% {
-      transform: rotate(0deg);
-    }
-    25% {
-      transform: rotate(20deg);
-    }
-    75% {
-      transform: rotate(-20deg);
-    }
-  }
-
-  .empty-title {
-    font-size: var(--font-size-xl);
+  h2 {
+    font-size: 20px;
     font-weight: 600;
     color: var(--color-text-primary);
-    margin-bottom: var(--spacing-sm);
+    margin: 0 0 8px;
   }
 
-  .empty-description {
-    font-size: var(--font-size-sm);
+  p {
+    font-size: 14px;
     color: var(--color-text-secondary);
-    max-width: 300px;
-    line-height: 1.6;
+    margin: 0 0 24px;
   }
 
-  .quick-actions {
-    margin-top: var(--spacing-xl);
-    width: 100%;
-  }
-
-  .quick-label {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .quick-buttons {
+  .quick {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacing-sm);
+    gap: 8px;
     justify-content: center;
   }
 
-  .quick-btn {
-    padding: var(--spacing-xs) var(--spacing-md);
+  .quick button {
+    padding: 8px 16px;
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-full);
+    border-radius: 20px;
     color: var(--color-text-secondary);
-    font-size: var(--font-size-xs);
+    font-size: 13px;
     cursor: pointer;
-    transition: all var(--transition-fast);
-    text-transform: capitalize;
+    transition: all 0.15s;
   }
 
-  .quick-btn:hover:not(:disabled) {
+  .quick button:hover:not(:disabled) {
     background: var(--color-accent);
     border-color: var(--color-accent);
-    color: white;
+    color: #fff;
   }
 
-  .quick-btn:disabled {
+  .quick button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

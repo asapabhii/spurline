@@ -1,67 +1,56 @@
 <script lang="ts">
-  import { suggestions, chatActions, isTyping } from '$lib/stores/chat.store';
+  import { suggestions, chatActions, isStreaming, isTyping } from '$lib/stores/chat.store';
 
-  async function handleSuggestionClick(suggestion: string) {
-    await chatActions.sendSuggestion(suggestion);
-  }
+  const isDisabled = $derived($isStreaming || $isTyping);
 </script>
 
-<div class="suggestions-container">
-  <p class="suggestions-label">Suggested questions:</p>
-  <div class="suggestions-list">
-    {#each $suggestions as suggestion}
+{#if $suggestions.length > 0}
+  <div class="suggestions">
+    {#each $suggestions as text}
       <button 
-        class="suggestion-btn"
-        onclick={() => handleSuggestionClick(suggestion)}
-        disabled={$isTyping}
+        class="suggestion-chip"
+        onclick={() => chatActions.sendSuggestion(text)}
+        disabled={isDisabled}
       >
-        {suggestion}
+        {text}
       </button>
     {/each}
   </div>
-</div>
+{/if}
 
 <style>
-  .suggestions-container {
-    padding: var(--spacing-sm) var(--spacing-md);
-    background: var(--color-bg-secondary);
-    border-top: 1px solid var(--color-border);
-    flex-shrink: 0;
-  }
-
-  .suggestions-label {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-    margin-bottom: var(--spacing-xs);
-  }
-
-  .suggestions-list {
+  .suggestions {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacing-xs);
+    gap: 6px;
+    padding: 8px 16px;
+    background: var(--color-bg-secondary);
+    border-top: 1px solid var(--color-border);
   }
 
-  .suggestion-btn {
-    padding: var(--spacing-xs) var(--spacing-sm);
+  .suggestion-chip {
+    padding: 6px 12px;
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-full);
+    border-radius: 16px;
     color: var(--color-text-secondary);
-    font-size: var(--font-size-xs);
+    font-size: 12px;
     cursor: pointer;
-    transition: all var(--transition-fast);
-    text-align: left;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .suggestion-btn:hover:not(:disabled) {
+  .suggestion-chip:hover:not(:disabled) {
     background: var(--color-accent);
     border-color: var(--color-accent);
-    color: white;
+    color: #fff;
   }
 
-  .suggestion-btn:disabled {
+  .suggestion-chip:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 </style>
-

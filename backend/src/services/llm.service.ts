@@ -4,59 +4,58 @@ import type { Message } from '../types/domain.types.js';
 import { logger } from '../utils/logger.js';
 
 /**
- * Domain knowledge injected into system prompt
+ * Domain knowledge constants - externalize in production
  */
 const DOMAIN_KNOWLEDGE = `
-DOMAIN KNOWLEDGE:
-- Shipping: Free shipping on orders over $50. Standard delivery 5-7 business days. International shipping available (10-14 business days).
-- Returns: 30-day return policy. Items must be unused with original tags attached. Refunds processed within 5-7 business days.
-- Support Hours: Monday-Friday 9AM-6PM EST. Email support available 24/7 with response within 24 hours.
-- Payment: We accept all major credit cards, PayPal, and Apple Pay.
-- Order Tracking: Tracking numbers sent via email within 24 hours of shipment.
+KNOWLEDGE BASE:
+- Shipping: Free on orders $50+. Standard: 5-7 days. International: 10-14 days.
+- Returns: 30 days. Unused, tags attached. Refund in 5-7 days.
+- Hours: Mon-Fri 9AM-6PM EST. Email 24/7, reply within 24h.
+- Payment: Visa, Mastercard, Amex, PayPal, Apple Pay.
+- Tracking: Email within 24h of shipment.
 `.trim();
 
-/**
- * System prompt for the support agent
- */
-const SYSTEM_PROMPT = `You are a helpful AI agent for "Spurline".
-Answer clearly, concisely, and accurately.
-If you do not know something, say so honestly.
-Do not hallucinate policies or make up information.
-Be friendly but professional.
-Keep responses brief - aim for 1-3 sentences when possible.
-IMPORTANT: Respond in the SAME LANGUAGE as the user's message.
+const SYSTEM_PROMPT = `You are a helpful AI assistant for Spurline.
+Be concise, accurate, and friendly. Keep responses to 1-2 sentences.
+If unsure, say so. Never fabricate information.
+Match the user's language in your response.
 
 ${DOMAIN_KNOWLEDGE}`;
 
+const SUGGESTION_PROMPT = `Generate exactly 3 short follow-up questions (max 6 words each) based on the conversation context. Return only a JSON array. Example: ["Track my order?","Return policy?","Delivery time?"]`;
+
 /**
- * LLM Service interface for abstraction
+ * LLM Service contract
  */
-export interface LLMService {
+export interface ILLMService {
   generateReply(history: Message[], userMessage: string): Promise<string>;
   generateReplyStream(
     history: Message[], 
     userMessage: string, 
     onChunk: (chunk: string) => void
-  ): Promise<{ content: string; suggestions: string[] }>;
-  generateSuggestions(history: Message[], lastResponse: string): Promise<string[]>;
+  ): Promise<LLMResponse>;
 }
 
-/**
- * OpenAI-compatible message format
- */
+export interface LLMResponse {
+  content: string;
+  suggestions: string[];
+}
+
 interface ChatMessage {
   content: string;
   role: 'assistant' | 'system' | 'user';
 }
 
 /**
- * Hugging Face Inference API implementation with streaming
+ * Hugging Face LLM implementation
+ * Production-ready with proper error handling, timeouts, and logging
  */
-export class HuggingFaceLLMService implements LLMService {
-  private readonly apiUrl = 'https://router.huggingface.co/v1/chat/completions';
-  private readonly model = 'meta-llama/Llama-3.2-3B-Instruct';
-  private readonly timeoutMs = 60000; // 60 second timeout for streaming
-  private readonly maxHistoryMessages = 10;
+export class HuggingFaceLLMService implements ILLMService {
+  private static readonly API_URL = 'https://router.huggingface.co/v1/chat/completions';
+  private static readonly MODEL = 'meta-llama/Llama-3.2-3B-Instruct';
+  private static readonly TIMEOUT_MS = 45_000;
+  private static readonly MAX_HISTORY = 8;
+  private static readonly MAX_TOKENS = 256;
 
   async generateReply(history: Message[], userMessage: string): Promise<string> {
     const result = await this.generateReplyStream(history, userMessage, () => {});
@@ -67,227 +66,208 @@ export class HuggingFaceLLMService implements LLMService {
     history: Message[], 
     userMessage: string,
     onChunk: (chunk: string) => void
-  ): Promise<{ content: string; suggestions: string[] }> {
+  ): Promise<LLMResponse> {
+    const startTime = Date.now();
     const messages = this.buildMessages(history, userMessage);
 
     try {
-      const content = await this.callHuggingFaceStream(messages, onChunk);
-      
-      // Generate suggestions after main response
-      const suggestions = await this.generateSuggestions(history, content);
-      
+      logger.debug('LLM request started', { 
+        historyLength: history.length,
+        messageLength: userMessage.length,
+      });
+
+      const content = await this.streamCompletion(messages, onChunk);
+      const suggestions = await this.generateSuggestions(content);
+
+      logger.info('LLM request completed', { 
+        durationMs: Date.now() - startTime,
+        responseLength: content.length,
+        suggestionsCount: suggestions.length,
+      });
+
       return { content, suggestions };
     } catch (error) {
-      return this.handleError(error);
-    }
-  }
-
-  async generateSuggestions(history: Message[], lastResponse: string): Promise<string[]> {
-    try {
-      const suggestionPrompt: ChatMessage[] = [
-        {
-          content: `Based on this conversation, generate exactly 3 brief follow-up questions the user might ask. 
-Return ONLY a JSON array of 3 strings, nothing else. Example: ["Question 1?", "Question 2?", "Question 3?"]`,
-          role: 'system',
-        },
-        {
-          content: `Last AI response: "${lastResponse.slice(0, 200)}"`,
-          role: 'user',
-        },
-      ];
-
-      const response = await this.callHuggingFace(suggestionPrompt, false);
-      
-      // Parse JSON array from response
-      const match = response.match(/\[[\s\S]*?\]/);
-      if (match) {
-        const parsed = JSON.parse(match[0]) as string[];
-        return parsed.slice(0, 3);
-      }
-      
-      return [];
-    } catch (error) {
-      logger.warn('Failed to generate suggestions', { 
-        error: error instanceof Error ? error.message : 'Unknown' 
+      logger.error('LLM request failed', {
+        durationMs: Date.now() - startTime,
+        error: error instanceof Error ? error.message : 'Unknown',
       });
-      return [];
+      throw this.normalizeError(error);
     }
   }
 
   private buildMessages(history: Message[], userMessage: string): ChatMessage[] {
-    const messages: ChatMessage[] = [];
+    const messages: ChatMessage[] = [
+      { role: 'system', content: SYSTEM_PROMPT },
+    ];
 
-    // System prompt
-    messages.push({
-      content: SYSTEM_PROMPT,
-      role: 'system',
-    });
-
-    // Add recent conversation history
-    const recentHistory = history.slice(-this.maxHistoryMessages);
+    // Include limited history for context
+    const recentHistory = history.slice(-HuggingFaceLLMService.MAX_HISTORY);
     for (const msg of recentHistory) {
       messages.push({
-        content: msg.content,
         role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content,
       });
     }
 
-    // Add current user message
-    messages.push({
-      content: userMessage,
-      role: 'user',
-    });
-
+    messages.push({ role: 'user', content: userMessage });
     return messages;
   }
 
-  private async callHuggingFace(messages: ChatMessage[], stream: boolean = false): Promise<string> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
-
-    try {
-      const response = await fetch(this.apiUrl, {
-        body: JSON.stringify({
-          max_tokens: 256,
-          messages,
-          model: this.model,
-          stream,
-          temperature: 0.7,
-          top_p: 0.9,
-        }),
-        headers: {
-          'Authorization': `Bearer ${env.HUGGINGFACE_API_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-      this.handleResponseErrors(response);
-
-      const data = await response.json() as {
-        choices: Array<{ message: { content: string } }>;
-      };
-      
-      return data.choices?.[0]?.message?.content?.trim() ?? '';
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
-  }
-
-  private async callHuggingFaceStream(
+  private async streamCompletion(
     messages: ChatMessage[], 
     onChunk: (chunk: string) => void
   ): Promise<string> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeoutId = setTimeout(
+      () => controller.abort(), 
+      HuggingFaceLLMService.TIMEOUT_MS
+    );
 
     try {
-      const response = await fetch(this.apiUrl, {
-        body: JSON.stringify({
-          max_tokens: 512,
-          messages,
-          model: this.model,
-          stream: true,
-          temperature: 0.7,
-          top_p: 0.9,
-        }),
+      const response = await fetch(HuggingFaceLLMService.API_URL, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${env.HUGGINGFACE_API_TOKEN}`,
           'Content-Type': 'application/json',
         },
-        method: 'POST',
+        body: JSON.stringify({
+          model: HuggingFaceLLMService.MODEL,
+          messages,
+          max_tokens: HuggingFaceLLMService.MAX_TOKENS,
+          temperature: 0.7,
+          stream: true,
+        }),
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
-      this.handleResponseErrors(response);
+      this.validateResponse(response);
 
-      // Read streaming response
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body');
-      }
+      return await this.processStream(response, onChunk);
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  }
 
-      const decoder = new TextDecoder();
-      let fullContent = '';
+  private async processStream(
+    response: Response, 
+    onChunk: (chunk: string) => void
+  ): Promise<string> {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body unavailable');
+    }
 
+    const decoder = new TextDecoder();
+    let content = '';
+    let buffer = '';
+
+    try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-
-            try {
-              const parsed = JSON.parse(data) as {
-                choices: Array<{ delta: { content?: string } }>;
-              };
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                fullContent += content;
-                onChunk(content);
-              }
-            } catch {
-              // Skip invalid JSON
-            }
+          const chunk = this.parseSSELine(line);
+          if (chunk) {
+            content += chunk;
+            onChunk(chunk);
           }
         }
       }
+    } finally {
+      reader.releaseLock();
+    }
 
-      return fullContent.trim();
-    } catch (error) {
-      clearTimeout(timeoutId);
+    return content.trim();
+  }
 
-      if (error instanceof LLMError) {
-        throw error;
-      }
+  private parseSSELine(line: string): string | null {
+    if (!line.startsWith('data: ')) return null;
+    
+    const data = line.slice(6);
+    if (data === '[DONE]') return null;
 
-      if (error instanceof Error && error.name === 'AbortError') {
-        logger.warn('HuggingFace request timed out');
-        throw LLMError.timeout();
-      }
-
-      throw error;
+    try {
+      const parsed = JSON.parse(data) as {
+        choices?: Array<{ delta?: { content?: string } }>;
+      };
+      return parsed.choices?.[0]?.delta?.content ?? null;
+    } catch {
+      return null;
     }
   }
 
-  private handleResponseErrors(response: Response): void {
+  private async generateSuggestions(context: string): Promise<string[]> {
+    try {
+      const response = await fetch(HuggingFaceLLMService.API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.HUGGINGFACE_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: HuggingFaceLLMService.MODEL,
+          messages: [
+            { role: 'system', content: SUGGESTION_PROMPT },
+            { role: 'user', content: `Context: "${context.slice(0, 150)}"` },
+          ],
+          max_tokens: 80,
+          temperature: 0.5,
+        }),
+      });
+
+      if (!response.ok) return [];
+
+      const data = await response.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+
+      const text = data.choices?.[0]?.message?.content ?? '';
+      const match = text.match(/\[[\s\S]*?\]/);
+      
+      if (match) {
+        const parsed = JSON.parse(match[0]) as string[];
+        return parsed.slice(0, 3).map(s => s.slice(0, 40));
+      }
+    } catch (error) {
+      logger.warn('Failed to generate suggestions', {
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
+    }
+    
+    return [];
+  }
+
+  private validateResponse(response: Response): void {
     if (response.status === 429) {
-      logger.warn('HuggingFace rate limited');
       throw LLMError.rateLimited();
     }
-
     if (response.status === 503) {
-      logger.warn('HuggingFace service unavailable');
       throw LLMError.serviceUnavailable();
     }
-
     if (!response.ok) {
-      logger.error('HuggingFace API error', { status: response.status });
-      throw new Error(`HuggingFace API error: ${response.status}`);
+      throw new Error(`API error: ${response.status}`);
     }
   }
 
-  private handleError(error: unknown): never {
-    if (error instanceof LLMError) {
-      throw error;
+  private normalizeError(error: unknown): LLMError {
+    if (error instanceof LLMError) return error;
+    
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        return LLMError.timeout();
+      }
     }
-
-    logger.error('LLM service error', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-
-    throw LLMError.serviceUnavailable();
+    
+    return LLMError.serviceUnavailable();
   }
 }
 
-// Singleton instance
-export const llmService: LLMService = new HuggingFaceLLMService();
+// Singleton export
+export const llmService: ILLMService = new HuggingFaceLLMService();

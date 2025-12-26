@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Message } from '$lib/types';
-  import { chatActions, streamingMessageId } from '$lib/stores/chat.store';
+  import { streamingMessageId } from '$lib/stores/chat.store';
 
   interface Props {
     message: Message;
@@ -10,114 +10,80 @@
 
   const isUser = $derived(message.sender === 'user');
   const isStreaming = $derived($streamingMessageId === message.id);
-  const showFeedback = $derived(message.sender === 'ai' && message.content && !isStreaming);
   
   function formatTime(dateString: string): string {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-  }
-
-  async function handleFeedback(rating: 'up' | 'down') {
-    if (message.feedback === rating) {
-      await chatActions.removeFeedback(message.id);
-    } else {
-      await chatActions.submitFeedback(message.id, rating);
-    }
+    return new Date(dateString).toLocaleTimeString('en-IN', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      hour12: true,
+    });
   }
 </script>
 
-<div class="message-wrapper" class:user={isUser} class:ai={!isUser}>
+<div class="message-row" class:user={isUser}>
   <div class="message-bubble" class:streaming={isStreaming}>
-    <p class="message-content">{message.content}{#if isStreaming}<span class="cursor">▊</span>{/if}</p>
+    <span class="message-text">{message.content}</span>{#if isStreaming}<span class="cursor"></span>{/if}
   </div>
-  
-  <div class="message-footer">
-    <span class="message-time">{formatTime(message.createdAt)}</span>
-    
-    {#if showFeedback}
-      <div class="feedback-buttons">
-        <button 
-          class="feedback-btn" 
-          class:active={message.feedback === 'up'}
-          onclick={() => handleFeedback('up')}
-          title="Helpful"
-        >
-          👍
-        </button>
-        <button 
-          class="feedback-btn" 
-          class:active={message.feedback === 'down'}
-          onclick={() => handleFeedback('down')}
-          title="Not helpful"
-        >
-          👎
-        </button>
-      </div>
-    {/if}
-  </div>
+  <span class="message-time">{formatTime(message.createdAt)}</span>
 </div>
 
 <style>
-  .message-wrapper {
+  .message-row {
     display: flex;
     flex-direction: column;
-    max-width: 85%;
-    animation: fadeIn 0.2s ease-out;
+    max-width: 80%;
+    animation: slideIn 0.15s ease-out;
   }
 
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
-  .message-wrapper.user {
+  .message-row.user {
     align-self: flex-end;
     align-items: flex-end;
   }
 
-  .message-wrapper.ai {
+  .message-row:not(.user) {
     align-self: flex-start;
     align-items: flex-start;
   }
 
   .message-bubble {
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-radius: var(--radius-lg);
+    padding: 10px 14px;
+    border-radius: 16px;
+    line-height: 1.45;
     word-wrap: break-word;
+    word-break: break-word;
     overflow-wrap: break-word;
-  }
-
-  .message-bubble.streaming {
-    min-height: 40px;
+    white-space: pre-wrap;
   }
 
   .user .message-bubble {
     background: var(--color-user-bubble);
-    color: white;
-    border-bottom-right-radius: var(--radius-sm);
+    color: #fff;
+    border-bottom-right-radius: 4px;
   }
 
-  .ai .message-bubble {
+  .message-row:not(.user) .message-bubble {
     background: var(--color-ai-bubble);
     color: var(--color-text-primary);
-    border-bottom-left-radius: var(--radius-sm);
+    border-bottom-left-radius: 4px;
   }
 
-  .message-content {
-    font-size: var(--font-size-sm);
-    line-height: 1.5;
-    white-space: pre-wrap;
+  .message-text {
+    font-size: 14px;
   }
 
   .cursor {
-    animation: blink 1s infinite;
-    color: var(--color-accent);
+    display: inline-block;
+    width: 2px;
+    height: 16px;
+    background: var(--color-accent);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: blink 0.8s infinite;
   }
 
   @keyframes blink {
@@ -125,42 +91,10 @@
     51%, 100% { opacity: 0; }
   }
 
-  .message-footer {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    margin-top: var(--spacing-xs);
-    padding: 0 var(--spacing-xs);
-  }
-
   .message-time {
-    font-size: var(--font-size-xs);
+    font-size: 11px;
     color: var(--color-text-muted);
-  }
-
-  .feedback-buttons {
-    display: flex;
-    gap: 2px;
-  }
-
-  .feedback-btn {
-    padding: 2px 6px;
-    background: transparent;
-    border: none;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    opacity: 0.4;
-    font-size: 12px;
-    transition: all var(--transition-fast);
-  }
-
-  .feedback-btn:hover {
-    opacity: 1;
-    background: var(--color-bg-tertiary);
-  }
-
-  .feedback-btn.active {
-    opacity: 1;
-    background: var(--color-bg-tertiary);
+    margin-top: 4px;
+    padding: 0 4px;
   }
 </style>

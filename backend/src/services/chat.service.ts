@@ -3,16 +3,18 @@ import { messageRepository } from '../repositories/message.repository.js';
 import type { Conversation, Message } from '../types/domain.types.js';
 import { logger } from '../utils/logger.js';
 
-import { llmService } from './llm.service.js';
+import { llmService, type LLMResponse } from './llm.service.js';
 import { 
   emitAiTypingStart, 
   emitAiTypingStop, 
   emitStreamChunk, 
   emitStreamEnd, 
-  emitStreamStart 
+  emitStreamStart,
 } from './socket.service.js';
-import { typingService } from './typing.service.js';
 
+/**
+ * Result of sending a message
+ */
 export interface SendMessageResult {
   aiMessage: Message;
   conversation: Conversation;
@@ -22,91 +24,112 @@ export interface SendMessageResult {
 
 /**
  * Chat orchestration service
- * Coordinates message persistence, LLM calls, and real-time updates
+ * Handles the complete message flow: persist → stream → respond
  */
 export class ChatService {
-  private readonly maxHistoryForLLM = 10;
+  private static readonly MAX_HISTORY_CONTEXT = 8;
 
   /**
-   * Process an incoming user message and generate AI response with streaming
+   * Process user message and generate AI response
    */
   async sendMessage(sessionId: string | undefined, content: string): Promise<SendMessageResult> {
+    const startTime = Date.now();
+    
     // Get or create conversation
     const conversation = conversationRepository.getOrCreate(sessionId);
+    const isNewConversation = sessionId !== conversation.id;
     
-    logger.debug('Processing message', {
+    logger.info('Processing message', {
       conversationId: conversation.id,
-      isNewConversation: sessionId !== conversation.id,
+      isNew: isNewConversation,
+      contentLength: content.length,
     });
 
-    // Persist user message
+    // Persist user message first (source of truth)
     const userMessage = messageRepository.create(conversation.id, content, 'user');
 
-    // Set typing indicators (both Redis and Socket)
-    await typingService.setTyping(conversation.id);
+    // Signal AI is working
     emitAiTypingStart(conversation.id);
 
     try {
-      // Get conversation history for context
+      // Get conversation context
       const history = messageRepository.findByConversationId(
         conversation.id,
-        this.maxHistoryForLLM,
+        ChatService.MAX_HISTORY_CONTEXT,
       );
 
-      // Create placeholder for AI message
+      // Create placeholder for streaming
       const aiMessageId = messageRepository.createPlaceholder(conversation.id);
       emitStreamStart(conversation.id, aiMessageId);
 
-      let fullContent = '';
-
-      // Generate AI response with streaming
-      const result = await llmService.generateReplyStream(
-        history, 
+      // Generate response with streaming
+      const llmResponse = await this.generateWithStreaming(
+        conversation.id,
+        aiMessageId,
+        history,
         content,
-        (chunk) => {
-          fullContent += chunk;
-          emitStreamChunk(conversation.id, aiMessageId, chunk);
-        }
       );
 
-      // Clear typing indicators
-      await typingService.clearTyping(conversation.id);
-      emitAiTypingStop(conversation.id);
-
-      // Update placeholder with full content and suggestions
+      // Finalize message
       const aiMessage = messageRepository.updatePlaceholder(
         aiMessageId, 
-        result.content,
-        result.suggestions
+        llmResponse.content,
+        llmResponse.suggestions,
       );
 
-      // Emit stream end with suggestions
-      emitStreamEnd(conversation.id, aiMessageId, result.suggestions);
+      emitStreamEnd(conversation.id, aiMessageId, llmResponse.suggestions);
+      emitAiTypingStop(conversation.id);
 
-      logger.debug('Message processed successfully', {
-        aiMessageId: aiMessage.id,
+      logger.info('Message processed', {
         conversationId: conversation.id,
-        userMessageId: userMessage.id,
+        durationMs: Date.now() - startTime,
+        responseLength: llmResponse.content.length,
       });
 
       return {
         aiMessage,
         conversation,
-        suggestions: result.suggestions,
+        suggestions: llmResponse.suggestions,
         userMessage,
       };
     } catch (error) {
-      // Always clear typing on error
-      await typingService.clearTyping(conversation.id);
       emitAiTypingStop(conversation.id);
+      
+      logger.error('Message processing failed', {
+        conversationId: conversation.id,
+        durationMs: Date.now() - startTime,
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
+      
       throw error;
     }
   }
 
   /**
-   * Get conversation history
+   * Stream LLM response with real-time updates
    */
-  getConversationHistory(sessionId: string): { conversation: Conversation; messages: Message[] } | null {
+  private async generateWithStreaming(
+    conversationId: string,
+    messageId: string,
+    history: Message[],
+    userMessage: string,
+  ): Promise<LLMResponse> {
+    return llmService.generateReplyStream(
+      history,
+      userMessage,
+      (chunk) => {
+        emitStreamChunk(conversationId, messageId, chunk);
+      },
+    );
+  }
+
+  /**
+   * Get full conversation history
+   */
+  getConversationHistory(sessionId: string): { 
+    conversation: Conversation; 
+    messages: Message[];
+  } | null {
     const conversation = conversationRepository.findById(sessionId);
     
     if (!conversation) {
@@ -114,17 +137,9 @@ export class ChatService {
     }
 
     const messages = messageRepository.findByConversationId(sessionId);
-    
     return { conversation, messages };
-  }
-
-  /**
-   * Check if AI is currently typing for a conversation
-   */
-  async getTypingStatus(sessionId: string): Promise<boolean> {
-    return typingService.isTyping(sessionId);
   }
 }
 
-// Singleton instance
+// Singleton export
 export const chatService = new ChatService();

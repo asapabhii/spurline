@@ -1,61 +1,60 @@
 import type { NextFunction, Request, Response } from 'express';
-import { z } from 'zod';
 
 import { AppError } from '../middleware/error-handler.js';
 import { sanitizeInput, validateMessageContent } from '../middleware/validation.js';
-import { feedbackRepository, type FeedbackRating } from '../repositories/feedback.repository.js';
 import { messageRepository } from '../repositories/message.repository.js';
 import { chatService } from '../services/chat.service.js';
 import {
   type ConversationHistoryResponse,
-  type ConversationStatusResponse,
   sendMessageRequestSchema,
   type SendMessageResponse,
 } from '../types/api.types.js';
+import { logger } from '../utils/logger.js';
 
-// Extended response with suggestions
-interface SendMessageResponseWithSuggestions extends SendMessageResponse {
+/**
+ * Extended response with suggestions
+ */
+interface ChatResponse extends SendMessageResponse {
   suggestions: string[];
 }
 
-// Feedback request schema
-const feedbackRequestSchema = z.object({
-  messageId: z.string().uuid(),
-  rating: z.enum(['up', 'down']),
-  sessionId: z.string().uuid(),
-});
-
 /**
- * Chat controller - handles request orchestration
+ * Chat Controller
+ * Handles HTTP request/response cycle for chat operations
  */
 export class ChatController {
   /**
    * POST /api/chat/message
+   * Send message and receive streaming AI response
    */
   async sendMessage(
     req: Request,
-    res: Response<SendMessageResponseWithSuggestions>,
+    res: Response<ChatResponse>,
     next: NextFunction,
   ): Promise<void> {
     try {
-      const validationResult = sendMessageRequestSchema.safeParse(req.body);
+      // Validate request schema
+      const validation = sendMessageRequestSchema.safeParse(req.body);
       
-      if (!validationResult.success) {
-        const firstError = validationResult.error.errors[0];
-        throw new AppError(400, firstError?.message ?? 'Invalid request', 'VALIDATION_ERROR');
+      if (!validation.success) {
+        const error = validation.error.errors[0];
+        throw new AppError(400, error?.message ?? 'Invalid request', 'VALIDATION_ERROR');
       }
 
-      const { sessionId } = validationResult.data;
+      const { sessionId } = validation.data;
       
-      const sanitizedMessage = sanitizeInput(validationResult.data.message);
-      const contentValidation = validateMessageContent(sanitizedMessage);
+      // Sanitize and validate content
+      const content = sanitizeInput(validation.data.message);
+      const contentCheck = validateMessageContent(content);
       
-      if (!contentValidation.isValid) {
-        throw new AppError(400, contentValidation.error ?? 'Invalid message', 'VALIDATION_ERROR');
+      if (!contentCheck.isValid) {
+        throw new AppError(400, contentCheck.error ?? 'Invalid message', 'VALIDATION_ERROR');
       }
 
-      const result = await chatService.sendMessage(sessionId, sanitizedMessage);
+      // Process message
+      const result = await chatService.sendMessage(sessionId, content);
 
+      // Return response
       res.status(200).json({
         createdAt: result.aiMessage.createdAt.toISOString(),
         messageId: result.aiMessage.id,
@@ -70,10 +69,11 @@ export class ChatController {
 
   /**
    * GET /api/chat/:sessionId
+   * Retrieve conversation history
    */
   async getConversation(
     req: Request<{ sessionId: string }>,
-    res: Response<ConversationHistoryResponse & { messages: Array<{ feedback?: 'up' | 'down'; suggestions?: string[] }> }>,
+    res: Response<ConversationHistoryResponse>,
     next: NextFunction,
   ): Promise<void> {
     try {
@@ -92,24 +92,14 @@ export class ChatController {
       // Get messages with suggestions
       const messagesWithSuggestions = messageRepository.findByConversationIdWithSuggestions(sessionId);
 
-      // Get feedback for each AI message
-      const messagesWithFeedback = messagesWithSuggestions.map((msg) => {
-        const feedback = msg.sender === 'ai' 
-          ? feedbackRepository.findByMessageId(msg.id)
-          : null;
-
-        return {
+      res.status(200).json({
+        messages: messagesWithSuggestions.map((msg) => ({
           content: msg.content,
           createdAt: msg.createdAt.toISOString(),
-          feedback: feedback?.rating,
           id: msg.id,
           sender: msg.sender,
           suggestions: msg.suggestions,
-        };
-      });
-
-      res.status(200).json({
-        messages: messagesWithFeedback,
+        })),
         sessionId: result.conversation.id,
       });
     } catch (error) {
@@ -119,10 +109,11 @@ export class ChatController {
 
   /**
    * GET /api/chat/:sessionId/status
+   * Get conversation status (for polling fallback)
    */
   async getStatus(
     req: Request<{ sessionId: string }>,
-    res: Response<ConversationStatusResponse>,
+    res: Response<{ isTyping: boolean }>,
     next: NextFunction,
   ): Promise<void> {
     try {
@@ -132,65 +123,14 @@ export class ChatController {
         throw new AppError(400, 'Session ID is required', 'VALIDATION_ERROR');
       }
 
-      const isTyping = await chatService.getTypingStatus(sessionId);
-
-      res.status(200).json({
-        isTyping,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * POST /api/chat/feedback
-   */
-  async submitFeedback(
-    req: Request,
-    res: Response<{ success: boolean }>,
-    next: NextFunction,
-  ): Promise<void> {
-    try {
-      const validationResult = feedbackRequestSchema.safeParse(req.body);
-      
-      if (!validationResult.success) {
-        const firstError = validationResult.error.errors[0];
-        throw new AppError(400, firstError?.message ?? 'Invalid request', 'VALIDATION_ERROR');
-      }
-
-      const { messageId, rating, sessionId } = validationResult.data;
-
-      feedbackRepository.upsert(messageId, sessionId, rating as FeedbackRating);
-
-      res.status(200).json({ success: true });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * DELETE /api/chat/feedback/:messageId
-   */
-  async removeFeedback(
-    req: Request<{ messageId: string }>,
-    res: Response<{ success: boolean }>,
-    next: NextFunction,
-  ): Promise<void> {
-    try {
-      const { messageId } = req.params;
-
-      if (!messageId) {
-        throw new AppError(400, 'Message ID is required', 'VALIDATION_ERROR');
-      }
-
-      feedbackRepository.delete(messageId);
-
-      res.status(200).json({ success: true });
+      // Status is primarily handled via WebSocket
+      // This endpoint exists as a fallback
+      res.status(200).json({ isTyping: false });
     } catch (error) {
       next(error);
     }
   }
 }
 
-// Singleton instance
+// Singleton export
 export const chatController = new ChatController();

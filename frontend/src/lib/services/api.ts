@@ -1,8 +1,6 @@
 import type {
   ApiError,
   ConversationHistoryResponse,
-  ConversationStatusResponse,
-  FeedbackRequest,
   SendMessageRequest,
   SendMessageResponse,
 } from '$lib/types';
@@ -10,13 +8,14 @@ import type {
 const API_BASE = '/api/chat';
 
 /**
- * API client for chat backend
+ * HTTP API Client for chat backend
+ * Handles REST communication with proper error handling
  */
-class ApiClient {
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {},
-  ): Promise<T> {
+class ChatApiClient {
+  /**
+   * Generic request handler with error normalization
+   */
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
     
     const response = await fetch(url, {
@@ -46,37 +45,12 @@ class ApiClient {
   }
 
   /**
-   * Get conversation history
+   * Retrieve conversation history
    */
   async getConversation(sessionId: string): Promise<ConversationHistoryResponse> {
     return this.request<ConversationHistoryResponse>(`/${sessionId}`);
   }
-
-  /**
-   * Get conversation status (typing indicator)
-   */
-  async getStatus(sessionId: string): Promise<ConversationStatusResponse> {
-    return this.request<ConversationStatusResponse>(`/${sessionId}/status`);
-  }
-
-  /**
-   * Submit feedback on an AI message
-   */
-  async submitFeedback(data: FeedbackRequest): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>('/feedback', {
-      body: JSON.stringify(data),
-      method: 'POST',
-    });
-  }
-
-  /**
-   * Remove feedback from a message
-   */
-  async removeFeedback(messageId: string): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/feedback/${messageId}`, {
-      method: 'DELETE',
-    });
-  }
 }
 
-export const api = new ApiClient();
+// Singleton export
+export const api = new ChatApiClient();

@@ -3,36 +3,34 @@
   import MessageBubble from './MessageBubble.svelte';
   import TypingIndicator from './TypingIndicator.svelte';
   import EmptyState from './EmptyState.svelte';
-  import { messages, isTyping, isEmpty, streamingMessageId } from '$lib/stores/chat.store';
+  import DateBadge from './DateBadge.svelte';
+  import { messages, isTyping, isEmpty, isStreaming } from '$lib/stores/chat.store';
 
-  let messagesContainer: HTMLDivElement;
+  let container: HTMLDivElement;
 
-  // Auto-scroll to bottom when messages change or streaming
+  // Auto-scroll on new content
   $effect(() => {
-    const msgCount = $messages.length;
-    const streaming = $streamingMessageId;
-    const typing = $isTyping;
-    
-    if (msgCount > 0 || typing || streaming) {
-      tick().then(() => {
-        if (messagesContainer) {
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-      });
-    }
+    const _ = [$messages.length, $isTyping, $isStreaming];
+    tick().then(() => {
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
   });
 </script>
 
-<div class="messages-container" bind:this={messagesContainer}>
+<div class="messages-container" bind:this={container}>
   {#if $isEmpty && !$isTyping}
     <EmptyState />
   {:else}
     <div class="messages-list">
+      <DateBadge />
+      
       {#each $messages as message (message.id)}
         <MessageBubble {message} />
       {/each}
       
-      {#if $isTyping && !$streamingMessageId}
+      {#if $isTyping && !$isStreaming}
         <TypingIndicator />
       {/if}
     </div>
@@ -43,14 +41,13 @@
   .messages-container {
     flex: 1;
     overflow-y: auto;
-    padding: var(--spacing-md);
-    scroll-behavior: smooth;
+    overflow-x: hidden;
+    padding: 12px 16px;
   }
 
   .messages-list {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
-    min-height: 100%;
+    gap: 12px;
   }
 </style>
