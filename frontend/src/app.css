@@ -33,8 +33,8 @@
   /* Typography */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-  /* Chat Dimensions */
-  --chat-width: 420px;
+  /* Chat Dimensions - WIDER */
+  --chat-width: 480px;
   --chat-height: 650px;
 }
 
@@ -136,7 +136,7 @@ textarea:focus-visible {
    Mobile Responsive
    =========================================================== */
 
-@media (max-width: 480px) {
+@media (max-width: 520px) {
   #app {
     padding: 0;
   }
@@ -151,7 +151,7 @@ textarea:focus-visible {
 
 @media (min-width: 1200px) {
   :root {
-    --chat-width: 450px;
+    --chat-width: 500px;
     --chat-height: 700px;
   }
 }

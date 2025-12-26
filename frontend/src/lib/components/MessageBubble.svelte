@@ -21,16 +21,22 @@
 </script>
 
 <div class="message-row" class:user={isUser}>
-  <div class="message-bubble" class:streaming={isStreaming}>
-    <span class="content">{message.content}</span>{#if isStreaming}<span class="cursor">|</span>{/if}
+  {#if !isUser}
+    <div class="avatar">S</div>
+  {/if}
+  
+  <div class="message-content">
+    <div class="bubble" class:streaming={isStreaming}>
+      <span class="text">{message.content}</span>{#if isStreaming}<span class="cursor">|</span>{/if}
+    </div>
+    <span class="time">{formatTime(message.createdAt)}</span>
   </div>
-  <span class="time">{formatTime(message.createdAt)}</span>
 </div>
 
 <style>
   .message-row {
     display: flex;
-    flex-direction: column;
+    gap: 10px;
     max-width: 85%;
     animation: fadeIn 0.2s ease-out;
   }
@@ -42,16 +48,42 @@
 
   .message-row.user {
     align-self: flex-end;
-    align-items: flex-end;
+    flex-direction: row-reverse;
   }
 
   .message-row:not(.user) {
     align-self: flex-start;
+  }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    flex-shrink: 0;
+  }
+
+  .message-content {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .user .message-content {
+    align-items: flex-end;
+  }
+
+  .message-row:not(.user) .message-content {
     align-items: flex-start;
   }
 
-  .message-bubble {
-    padding: 10px 14px;
+  .bubble {
+    padding: 12px 16px;
     border-radius: 18px;
     line-height: 1.5;
     word-wrap: break-word;
@@ -61,19 +93,19 @@
     font-size: 14px;
   }
 
-  .user .message-bubble {
+  .user .bubble {
     background: var(--color-user-bubble);
     color: #fff;
     border-bottom-right-radius: 4px;
   }
 
-  .message-row:not(.user) .message-bubble {
+  .message-row:not(.user) .bubble {
     background: var(--color-ai-bubble);
     color: var(--color-text-primary);
     border-bottom-left-radius: 4px;
   }
 
-  .content {
+  .text {
     display: inline;
   }
 

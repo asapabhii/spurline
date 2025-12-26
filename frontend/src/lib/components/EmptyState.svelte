@@ -84,7 +84,6 @@
     background: var(--color-accent);
     border-color: var(--color-accent);
     color: #fff;
-    transform: translateY(-1px);
   }
 
   .quick-actions button:disabled {
