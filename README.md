@@ -1,21 +1,13 @@
 # Spurline AI Support Agent
 
-A production-grade AI customer support agent built with real-time streaming, persistent conversation history, and a clean, extensible architecture. Features WebSocket-based streaming responses, intelligent follow-up suggestions, and graceful degradation for production reliability.
+![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue)
+![Node](https://img.shields.io/badge/Node.js-20+-green)
+![SvelteKit](https://img.shields.io/badge/SvelteKit-Frontend-orange)
+![Vercel](https://img.shields.io/badge/Vercel-Deployed-black)
 
----
+**🌐 [Live Website](https://spurline.asapabhi.me/)**
 
-## Table of Contents
-
-- [Quick Start](#quick-start)
-- [Local Development](#local-development)
-- [Database Setup](#database-setup)
-- [Environment Configuration](#environment-configuration)
-- [Architecture Overview](#architecture-overview)
-- [LLM Integration](#llm-integration)
-- [API Reference](#api-reference)
-- [Trade-offs & Design Decisions](#trade-offs--design-decisions)
-- [If I Had More Time](#if-i-had-more-time)
-- [Deployment](#deployment)
+A production-grade AI customer support agent with real-time streaming, persistent PostgreSQL database, and clean architecture. Built with SvelteKit, Express, and Hugging Face LLM.
 
 ---
 
@@ -26,561 +18,150 @@ A production-grade AI customer support agent built with real-time streaming, per
 - **Node.js** 20+ (LTS recommended)
 - **npm** or **yarn**
 - **Hugging Face account** (free tier works)
-- **Redis** (optional, for production rate limiting)
+- **PostgreSQL** (for production) or SQLite (for local dev)
 
 ### Installation
 
 ```bash
-# Clone repository
 git clone https://github.com/asapabhii/spurline.git
 cd spurline
 
-# Install backend dependencies
-cd backend
-npm install
+# Backend
+cd backend && npm install
 
-# Install frontend dependencies
-cd ../frontend
-npm install
+# Frontend
+cd ../frontend && npm install
 ```
 
----
+### Environment Setup
 
-## Local Development
-
-### Step 1: Configure Environment Variables
-
-Create a `.env` file in the `backend` directory:
-
-```bash
-cd backend
-cp .env.example .env  # If .env.example exists, or create manually
-```
-
-Edit `.env` with your configuration:
+**Backend** (`.env` file):
 
 ```env
-# Server Configuration
 NODE_ENV=development
 PORT=3001
-
-# Database
-DATABASE_PATH=./data/spurline.db
-
-# Hugging Face API (Required)
+DATABASE_URL=postgresql://user:pass@localhost/spurline  # PostgreSQL
+# OR for local dev with SQLite: DATABASE_PATH=./data/spurline.db
 HUGGINGFACE_API_TOKEN=hf_your_token_here
-
-# Frontend URL (for CORS in production)
 FRONTEND_URL=http://localhost:5173
-
-# Redis (Optional - app works without it)
-REDIS_URL=redis://localhost:6379
+REDIS_URL=redis://localhost:6379  # Optional
 ```
 
-**Getting your Hugging Face API Token:**
-1. Sign up at [huggingface.co](https://huggingface.co)
-2. Go to [Settings → Access Tokens](https://huggingface.co/settings/tokens)
-3. Create a new token with **read** access
-4. Copy the token (starts with `hf_`) into your `.env` file
+**Frontend** (`.env` file):
 
-### Step 2: Set Up Database
+```env
+PUBLIC_BACKEND_URL=http://localhost:3001
+```
 
-Run migrations to create the database schema:
+### Database Setup
 
 ```bash
 cd backend
-npm run migrate
+npm run migrate  # Creates tables in PostgreSQL/SQLite
+npm run seed     # Optional: sample data
 ```
 
-This will:
-- Create the SQLite database file at `./data/spurline.db`
-- Create `conversations` and `messages` tables
-- Set up foreign key constraints and indexes
-
-**Optional:** Seed sample data for testing:
+### Run Locally
 
 ```bash
-npm run seed
+# Terminal 1 - Backend
+cd backend && npm run dev
+
+# Terminal 2 - Frontend
+cd frontend && npm run dev
 ```
 
-### Step 3: Start Development Servers
-
-**Terminal 1 - Backend:**
-```bash
-cd backend
-npm run dev
-```
-
-The backend will start on `http://localhost:3001`
-
-**Terminal 2 - Frontend:**
-```bash
-cd frontend
-npm run dev
-```
-
-The frontend will start on `http://localhost:5173`
-
-### Step 4: Verify Setup
-
-1. **Backend Health Check:**
-   ```bash
-   curl http://localhost:3001/health
-   # Expected: {"status":"ok","timestamp":"..."}
-   ```
-
-2. **Backend Readiness Check:**
-   ```bash
-   curl http://localhost:3001/health/ready
-   # Expected: {"status":"ready","checks":{"database":"ok","redis":"ok|optional"}}
-   ```
-
-3. **Open the Application:**
-   - Navigate to [http://localhost:5173](http://localhost:5173)
-   - The chat widget should appear
-   - Send a test message to verify end-to-end flow
+Visit [http://localhost:5173](http://localhost:5173)
 
 ---
 
-## Database Setup
+## Architecture
 
-### Migrations
+**Backend:** Express + TypeScript + PostgreSQL  
+**Frontend:** SvelteKit + TypeScript  
+**LLM:** Hugging Face (Llama 3.2 3B Instruct)  
+**Real-time:** Socket.IO (WebSocket streaming)
 
-The database schema is managed through migration scripts in `backend/src/db/migrations/`.
+### Backend Layers
 
-**Run migrations:**
-```bash
-cd backend
-npm run migrate
-```
-
-**What migrations do:**
-- Create `conversations` table (stores conversation metadata)
-- Create `messages` table (stores user and AI messages)
-- Set up foreign key relationships
-- Create indexes for performance
-
-**Migration files:**
-- `001_initial.ts` - Initial schema setup
-
-### Database Schema
-
-```sql
--- Conversations table
-CREATE TABLE conversations (
-  id TEXT PRIMARY KEY,
-  created_at TEXT NOT NULL,
-  channel TEXT DEFAULT 'web',
-  metadata TEXT  -- JSON metadata
-);
-
--- Messages table
-CREATE TABLE messages (
-  id TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL,
-  sender TEXT CHECK (sender IN ('user', 'ai')),
-  content TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-);
-
--- Indexes for performance
-CREATE INDEX idx_messages_conversation ON messages(conversation_id);
-CREATE INDEX idx_messages_created ON messages(created_at);
-```
-
-### Seeding 
-
-Seed scripts populate the database with sample data for testing:
-
-```bash
-cd backend
-npm run seed
-```
-
-**Note:** Seeding is optional and mainly useful for local development and testing.
-
----
-
-## Environment Configuration
-
-### Backend Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NODE_ENV` | No | `development` | Environment mode: `development`, `production`, or `test` |
-| `PORT` | No | `3001` | Server port number |
-| `DATABASE_PATH` | No | `./data/spurline.db` | Path to SQLite database file |
-| `HUGGINGFACE_API_TOKEN` | **Yes** | - | Hugging Face API token (starts with `hf_`) |
-| `FRONTEND_URL` | No | - | Frontend URL for CORS (required in production) |
-| `REDIS_URL` | No | `redis://localhost:6379` | Redis connection string (optional) |
-
-### Frontend Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `PUBLIC_BACKEND_URL` | No | `http://localhost:3001` | Backend API URL (for production) |
-
-**Note:** In SvelteKit, environment variables prefixed with `PUBLIC_` are exposed to the browser. Use `$env/dynamic/public` to access them.
-
-### Environment Validation
-
-The backend uses **Zod** for environment variable validation. Invalid configurations will cause the server to exit with a clear error message.
-
----
-
-## Architecture Overview
-
-### System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend (SvelteKit)                     │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │  Components  │→ │    Stores    │→ │   API Client     │  │
-│  │  (Svelte)    │  │  (Svelte)    │  │   (REST)         │  │
-│  └──────────────┘  └──────────────┘  └─────────┬──────────┘  │
-│                                                 │             │
-│  ┌─────────────────────────────────────────────┼──────────┐  │
-│  │         WebSocket Client (Socket.IO)         │          │  │
-│  └─────────────────────────────────────────────┼──────────┘  │
-└─────────────────────────────────────────────────┼──────────┘
-                                                    │
-                                    ┌───────────────┴───────────────┐
-                                    │                               │
-                                    ▼                               ▼
-                    ┌──────────────────────────┐    ┌──────────────────────┐
-                    │   REST API (Express)     │    │  WebSocket (Socket.IO)│
-                    └──────────────┬───────────┘    └──────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    │                               │
-                    ▼                               ▼
-        ┌──────────────────────┐        ┌──────────────────────┐
-        │   Controllers       │        │   Socket Service      │
-        │   (Request/Response)│        │   (Real-time Events)  │
-        └──────────┬──────────┘        └──────────────────────┘
-                    │
-                    ▼
-        ┌──────────────────────┐
-        │   Services Layer    │
-        │  - Chat Service     │
-        │  - LLM Service      │
-        └──────────┬──────────┘
-                    │
-        ┌───────────┴───────────┐
-        │                       │
-        ▼                       ▼
-┌──────────────┐      ┌──────────────────┐
-│ Repositories │      │  External APIs   │
-│  (SQLite)    │      │  (Hugging Face)  │
-└──────────────┘      └──────────────────┘
-```
-
-### Backend Structure
-
-The backend follows a **layered architecture** with clear separation of concerns:
-
-```
-backend/src/
-├── config/          # Configuration (env, database, redis)
-├── controllers/     # Request handlers (HTTP/WS)
-├── services/        # Business logic (chat orchestration, LLM)
-├── repositories/    # Data access layer (SQLite queries)
-├── routes/          # Route definitions
-├── middleware/      # Express middleware (validation, error handling)
-├── types/           # TypeScript type definitions
-├── db/              # Database migrations and seeds
-└── utils/           # Utilities (logging, ID generation)
-```
-
-#### Layer Responsibilities
-
-| Layer | Responsibility | Example |
-|-------|--------------|---------|
-| **Routes** | HTTP endpoint definitions, URL mapping | `POST /api/chat/message` |
-| **Controllers** | Request validation, response formatting, error handling | `ChatController.sendMessage()` |
-| **Services** | Business logic, orchestration, LLM interaction | `ChatService.sendMessage()`, `LLMService.generateReplyStream()` |
-| **Repositories** | Data persistence, SQL queries, transaction management | `MessageRepository.create()`, `ConversationRepository.getOrCreate()` |
-| **Config** | Environment variables, database connection, Redis client | `getDatabase()`, `getRedisClient()` |
+- **Routes** → HTTP/WS endpoints
+- **Controllers** → Request validation, response formatting
+- **Services** → Business logic, LLM orchestration
+- **Repositories** → PostgreSQL data access
 
 ### Key Design Decisions
 
-#### 1. **LLM Abstraction Layer**
-
-The `ILLMService` interface allows swapping LLM providers without changing business logic:
-
-```typescript
-interface ILLMService {
-  generateReplyStream(history: Message[], userMessage: string, onChunk: (chunk: string) => void): Promise<LLMResponse>;
-}
-```
-
-**Benefits:**
-- Easy to switch from Hugging Face → OpenAI → Anthropic
-- Testable with mock implementations
-- Provider-specific optimizations isolated to one class
-
-#### 2. **Streaming-First Architecture**
-
-Responses stream character-by-character via WebSocket for real-time UX:
-
-- User sees response as it's generated (ChatGPT-like experience)
-- Lower perceived latency
-- Better user engagement
-
-**Implementation:**
-- Server-Sent Events (SSE) from Hugging Face API
-- Socket.IO for WebSocket transport
-- Placeholder messages updated incrementally
-
-#### 3. **Graceful Degradation**
-
-The application works without Redis:
-
-- **With Redis:** Distributed rate limiting, ephemeral state
-- **Without Redis:** In-memory rate limiting, no ephemeral state
-- Database always required (SQLite)
-
-**Why:** Simplifies deployment, works on free tiers, no single point of failure.
-
-#### 4. **Session Continuity**
-
-Conversations persist across page reloads:
-
-- `sessionId` stored in `localStorage` (frontend)
-- Conversations stored in SQLite (backend)
-- Automatic conversation recovery on page load
-
-#### 5. **Type Safety Throughout**
-
-- **Zod** for runtime validation (env vars, API requests)
-- **TypeScript** strict mode for compile-time safety
-- Domain types (`Message`, `Conversation`) used consistently
-
-#### 6. **Error Handling Strategy**
-
-- **Custom error classes:** `AppError`, `LLMError` for domain-specific errors
-- **Centralized error middleware:** Consistent error responses
-- **User-friendly messages:** Technical errors never exposed to users
-- **Structured logging:** All errors logged with context
+- **PostgreSQL** for production persistence (migrated from SQLite)
+- **Streaming-first** architecture for ChatGPT-like UX
+- **Graceful degradation** - works without Redis
+- **Type-safe** throughout (TypeScript + Zod validation)
 
 ---
 
 ## LLM Integration
 
-### Provider: Hugging Face Inference API
-
-**Model:** `meta-llama/Llama-3.2-3B-Instruct`  
-**Endpoint:** `https://router.huggingface.co/v1/chat/completions`  
-**API Format:** OpenAI-compatible chat completions API
+**Provider:** Hugging Face Inference API  
+**Model:** `meta-llama/Llama-3.2-3B-Instruct`
 
 ### Why Hugging Face?
 
--  **Free tier** - No credit card required, generous rate limits
--  **Streaming support** - Server-Sent Events (SSE) for real-time responses
--  **Fast inference** - ~2-3 second response times
--  **Good instruction following** - Llama 3.2 3B is optimized for chat
--  **Reliable uptime** - Production-grade infrastructure
-```
+- ✅ Free tier, no credit card
+- ✅ Fast inference (~2-3s responses)
+- ✅ Streaming support via SSE
+- ✅ Reliable uptime
 
-### Message Construction
+### Prompting Strategy
 
-The LLM service builds a conversation context:
-
-```typescript
-[
-  { role: 'system', content: SYSTEM_PROMPT },
-  { role: 'user', content: 'Previous user message' },
-  { role: 'assistant', content: 'Previous AI response' },
-  // ... (up to 8 recent messages for context)
-  { role: 'user', content: 'Current user message' }
-]
-```
-
-**Context Window:** Limited to last 8 messages to:
-- Stay within token limits
-- Maintain relevance (older messages may be irrelevant)
-- Reduce latency
-
-### Streaming Implementation
-
-1. **SSE Parsing:** Hugging Face returns Server-Sent Events
-2. **Chunk Extraction:** Parse `data:` lines for `content` field
-3. **Real-time Emission:** Each chunk sent via Socket.IO to frontend
-4. **Placeholder Updates:** Frontend updates message bubble incrementally
-
-
-### Error Handling
-
-| Error Type | User Message | Technical Details |
-|------------|--------------|-------------------|
-| `429 Rate Limited` | "The agent is busy. Please try again." | Logged with retry-after |
-| `503 Unavailable` | "Agent temporarily unavailable." | Logged with service status |
-| `Timeout (>45s)` | "Response took too long. Try again." | Logged with duration |
-| `Network Error` | "Failed to connect. Check your connection." | Logged with error details |
+Structured system prompt with:
+1. **Role:** Customer support agent for Spurline
+2. **Rules:** Concise (1-3 sentences), no placeholders, match user language
+3. **Domain Knowledge:** Shipping, returns, contact info embedded
 
 ---
 
-## API Reference
+## Deployment
 
-### Chat Endpoints
+### Backend (Render)
 
-#### `POST /api/chat/message`
+1. Create **PostgreSQL** database on Render (free tier)
+2. Create **Web Service**:
+   - Root Directory: `backend`
+   - Build: `npm install && npm run build`
+   - Start: `npm run migrate && npm start`
+3. Environment Variables:
+   - `DATABASE_URL` (from PostgreSQL service)
+   - `HUGGINGFACE_API_TOKEN`
+   - `FRONTEND_URL=https://spurline.asapabhi.me`
+4. Note backend URL (e.g., `https://spurline-backend.onrender.com`)
 
-Send a message and receive AI response.
+### Frontend (Vercel)
 
-**Request Body:**
-```json
-{
-  "sessionId": "optional-session-id",
-  "content": "How do I track my order?"
-}
-```
-
-**Response:**
-```json
-{
-  "conversation": {
-    "id": "conv_123",
-    "createdAt": "2024-01-01T00:00:00Z"
-  },
-  "userMessage": {
-    "id": "msg_123",
-    "content": "How do I track my order?",
-    "sender": "user",
-    "createdAt": "2024-01-01T00:00:00Z"
-  },
-  "aiMessage": {
-    "id": "msg_124",
-    "content": "You'll receive a tracking number via email...",
-    "sender": "ai",
-    "createdAt": "2024-01-01T00:00:01Z"
-  },
-  "suggestions": ["Track my order?", "Return policy?", "Shipping cost?"]
-}
-```
-
-**WebSocket Events:**
-- `ai:typing` - AI is typing indicator
-- `ai:stream:start` - Streaming started
-- `ai:stream:chunk` - Text chunk received
-- `ai:stream:end` - Streaming completed
-
-#### `GET /api/chat/:sessionId`
-
-Retrieve conversation history.
-
-**Response:**
-```json
-{
-  "conversation": {
-    "id": "conv_123",
-    "createdAt": "2024-01-01T00:00:00Z"
-  },
-  "messages": [
-    {
-      "id": "msg_123",
-      "content": "How do I track my order?",
-      "sender": "user",
-      "createdAt": "2024-01-01T00:00:00Z"
-    },
-    {
-      "id": "msg_124",
-      "content": "You'll receive a tracking number...",
-      "sender": "ai",
-      "createdAt": "2024-01-01T00:00:01Z"
-    }
-  ]
-}
-```
-
-### Health Endpoints
-
-#### `GET /health`
-
-Liveness check - indicates server is running.
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2024-01-01T00:00:00Z"
-}
-```
-
-#### `GET /health/ready`
-
-Readiness check - indicates server is ready to accept traffic.
-
-**Response:**
-```json
-{
-  "status": "ready",
-  "checks": {
-    "database": "ok",
-    "redis": "ok"
-  },
-  "timestamp": "2024-01-01T00:00:00Z"
-}
-```
+1. Import GitHub repo
+2. Framework: SvelteKit
+3. Root Directory: `frontend`
+4. Environment Variable: `PUBLIC_BACKEND_URL` = your Render backend URL
+5. Add custom domain: `spurline.asapabhi.me`
 
 ---
 
-## Trade-offs & Design Decisions
+## Trade-offs
 
 | Decision | Trade-off | Rationale |
 |----------|-----------|-----------|
-| **SQLite over PostgreSQL** | No concurrent writes at scale, limited to single server | Zero-config, perfect for demo/take-home. Easy migration path to Postgres if needed. |
-| **sql.js over better-sqlite3** | Slightly slower (pure JS vs native) | No native compilation needed, works everywhere Node.js runs. Better for deployment flexibility. |
-| **In-memory rate limiting** | Lost on server restart, not distributed | Simpler, Redis optional. Good enough for MVP. Can upgrade to Redis-backed later. |
-| **Llama 3.2 3B over larger models** | Less capable than GPT-4/Claude | Free tier, fast inference, good enough for support use case. Can swap provider easily. |
-| **WebSocket streaming over polling** | More complex, requires connection management | Better UX (real-time), lower latency, industry standard. |
-| **Embedded domain knowledge** | Hard to update without code changes | Simple, works for MVP. Can externalize to database/config later. |
-| **No authentication** | All conversations are anonymous | Faster to build, good for public support widget. Can add auth layer later. |
-| **TypeScript strict mode** | More verbose, slower initial development | Catches bugs early, better maintainability, industry standard. |
+| PostgreSQL over SQLite | Requires managed DB | Better for production, concurrent writes |
+| Llama 3.2 3B | Smaller model | Free tier, fast, good enough for support |
+| Streaming responses | More complex | Better UX (ChatGPT-like) |
+| Socket.IO | Requires WebSocket | Real-time, industry standard |
 
 ---
 
 ## If I Had More Time
 
-### 1. **Authentication & User Management**
-- JWT-based authentication for personalized conversations
-- User accounts with conversation history tied to profiles
-- Admin dashboard for managing users and conversations
-- OAuth integration (Google, GitHub)
+1. **Authentication** - User accounts, personalized conversations
+2. **Admin Dashboard** - View conversations, analytics
+3. **Testing** - Comprehensive test suite
+4. **Multi-channel** - WhatsApp, Instagram integration
 
-### 2. **Admin Dashboard**
-- View all conversations across all users
-- Analytics: response times, common questions, user satisfaction
-- Knowledge base management UI (update domain knowledge without code changes)
-- Conversation search and filtering
-
-### 3. **Comprehensive Testing**
-- Unit tests for services and repositories
-- Integration tests with test database
-- E2E tests for critical user flows
-- CI/CD pipeline with automated testing
-
-### 4. **Multi-channel Support**
-- WhatsApp Business API integration
-- Instagram DM integration
-- Email support integration
-- Unified conversation view across channels
-
-### 5. **Advanced Features**
-- **RAG (Retrieval-Augmented Generation):** Vector search over knowledge base documents
-- **Sentiment Analysis:** Detect frustrated users, escalate to human agents
-- **Multi-language Support:** Automatic language detection and translation
-- **Analytics & Monitoring:** Detailed metrics, error tracking, performance monitoring
-
-### 6. **Production Hardening**
-- Rate limiting per user/IP (not just per session)
-- Request queuing for high traffic
-- Database connection pooling
-- Caching layer for common queries
-- CDN for static assets
 ---
 
 **Built with calm engineering by abhi.**
