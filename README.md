@@ -189,7 +189,7 @@ CREATE INDEX idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX idx_messages_created ON messages(created_at);
 ```
 
-### Seeding (Optional)
+### Seeding 
 
 Seed scripts populate the database with sample data for testing:
 
@@ -378,44 +378,11 @@ Conversations persist across page reloads:
 
 ### Why Hugging Face?
 
-- ✅ **Free tier** - No credit card required, generous rate limits
-- ✅ **Streaming support** - Server-Sent Events (SSE) for real-time responses
-- ✅ **Fast inference** - ~2-3 second response times
-- ✅ **Good instruction following** - Llama 3.2 3B is optimized for chat
-- ✅ **Reliable uptime** - Production-grade infrastructure
-
-### Prompting Strategy
-
-The system uses a **structured system prompt** with three components:
-
-#### 1. **Role Definition**
-```
-You are a helpful customer support agent for Spurline.
-```
-
-#### 2. **Behavioral Rules**
-```
-RULES:
-1. Be concise - keep responses to 1-3 sentences max.
-2. Only use information from the knowledge base below.
-3. If you don't know something, say "I don't have that information, but you can email us at support@spurline.com"
-4. NEVER use placeholders like [insert X] or [X]. Only give real information.
-5. NEVER make up policies, prices, or contact details.
-6. Match the user's language.
-```
-
-#### 3. **Domain Knowledge Base**
-```
-COMPANY INFO:
-- Company: Spurline
-- Email: support@spurline.com
-- Hours: Monday-Friday 9AM-6PM EST
-
-POLICIES:
-- Shipping: Free on orders $50+. Standard delivery 5-7 business days.
-- Returns: 30-day return policy. Items must be unused with tags attached.
-- Payment: We accept Visa, Mastercard, Amex, PayPal, and Apple Pay.
-- Tracking: Tracking number sent via email within 24 hours of shipment.
+-  **Free tier** - No credit card required, generous rate limits
+-  **Streaming support** - Server-Sent Events (SSE) for real-time responses
+-  **Fast inference** - ~2-3 second response times
+-  **Good instruction following** - Llama 3.2 3B is optimized for chat
+-  **Reliable uptime** - Production-grade infrastructure
 ```
 
 ### Message Construction
@@ -444,18 +411,6 @@ The LLM service builds a conversation context:
 3. **Real-time Emission:** Each chunk sent via Socket.IO to frontend
 4. **Placeholder Updates:** Frontend updates message bubble incrementally
 
-### Suggestion Generation
-
-After the main response, a separate LLM call generates 3 follow-up questions:
-
-```typescript
-const SUGGESTION_PROMPT = `Generate exactly 3 short follow-up questions (max 5 words each) based on the conversation. Return ONLY a JSON array with no explanation. Example: ["Track my order?","Return policy?","Shipping cost?"]`;
-```
-
-**Why separate call?**
-- Doesn't block main response
-- Can be optimized independently
-- Easier to handle failures (suggestions are optional)
 
 ### Error Handling
 
@@ -631,66 +586,60 @@ Readiness check - indicates server is ready to accept traffic.
 
 ## Deployment
 
-### Quick Deployment Guide
+### Backend (Railway)
 
-#### Backend (Render)
+Railway offers **free tier with persistent storage**, so SQLite works perfectly without any code changes.
 
-1. **Create Web Service:**
-   - Connect GitHub repository
-   - Build command: `cd backend && npm install && npm run build`
-   - Start command: `cd backend && npm run migrate && npm start`
-   - Plan: Starter (free tier)
+1. **Sign up:** Go to [railway.app](https://railway.app) (free tier available)
+2. **Create Project:** Click "New Project" → "Deploy from GitHub repo"
+3. **Connect Repository:** Select your `spurline` repository
+4. **Add Service:** Click "New" → "GitHub Repo" → Select your repo
+5. **Configure Service:**
+   - **Root Directory:** `backend`
+   - **Build Command:** `npm install && npm run build` (auto-detected)
+   - **Start Command:** `npm run migrate && npm start`
+6. **Add Environment Variables:**
+   - Go to service → "Variables" tab
+   - Add these:
+     ```
+     NODE_ENV=production
+     PORT=3001
+     DATABASE_PATH=./data/spurline.db
+     HUGGINGFACE_API_TOKEN=hf_your_token_here
+     FRONTEND_URL=https://spurline.asapabhi.me
+     REDIS_URL=redis://localhost:6379  # Optional
+     ```
+7. **Deploy:** Railway auto-deploys on push to main branch
+8. **Get Backend URL:** After deployment, note your Railway backend URL (e.g., `https://spurline-backend.up.railway.app`)
 
-2. **Environment Variables:**
-   ```
-   NODE_ENV=production
-   PORT=3001
-   DATABASE_PATH=/opt/render/project/src/backend/data/spurline.db
-   HUGGINGFACE_API_TOKEN=hf_your_token_here
-   FRONTEND_URL=https://spurline.asapabhi.me
-   REDIS_URL=redis://localhost:6379  # Optional
-   ```
+**Note:** Railway's free tier includes persistent storage automatically - no disk configuration needed!
 
-3. **Persistent Disk:**
-   - Add disk: 1GB
-   - Mount path: `/opt/render/project/src/backend/data`
+### Frontend (Vercel)
 
-4. **Note Backend URL:** Save your Render backend URL (e.g., `https://spurline-backend.onrender.com`)
-
-#### Frontend (Vercel)
-
-1. **Create Project:**
-   - Connect GitHub repository
-   - Framework: SvelteKit
-   - Root directory: `frontend`
-   - Build command: `npm run build`
-
-2. **Environment Variables:**
-   ```
-   PUBLIC_BACKEND_URL=https://spurline-backend.onrender.com
-   ```
-
-3. **Custom Domain:**
+1. **Create Project:** Go to [vercel.com](https://vercel.com) → "Add New" → "Project"
+2. **Import Repository:** Select your `spurline` repository
+3. **Configure:**
+   - **Framework Preset:** SvelteKit
+   - **Root Directory:** `frontend`
+   - **Build Command:** `npm run build` (auto-detected)
+4. **Environment Variables:**
+   - Go to "Settings" → "Environment Variables"
+   - Add: `PUBLIC_BACKEND_URL` = your Railway backend URL (from step 8 above)
+5. **Custom Domain:**
+   - Go to "Settings" → "Domains"
    - Add domain: `spurline.asapabhi.me`
    - Configure DNS: CNAME `spurline` → `cname.vercel-dns.com`
-
-4. **Deploy:** Vercel auto-deploys on push to main branch
+6. **Deploy:** Vercel auto-deploys on push to main branch
 
 ### Post-Deployment Checklist
 
-- [ ] Backend health check: `https://your-backend.onrender.com/health`
+- [ ] Backend health check: `https://your-backend.up.railway.app/health`
 - [ ] Frontend loads at `https://spurline.asapabhi.me`
 - [ ] Chat widget connects to backend
 - [ ] Socket.IO connection works (check browser console)
 - [ ] Messages send and receive correctly
 - [ ] Streaming responses work
 - [ ] Database persists (send message, refresh, verify history)
-
----
-
-## License
-
-MIT
 
 ---
 
