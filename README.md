@@ -4,6 +4,7 @@
 ![Node](https://img.shields.io/badge/Node.js-20+-green)
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-Frontend-orange)
 ![Vercel](https://img.shields.io/badge/Vercel-Deployed-black)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 **🌐 [Live Website](https://spurline.asapabhi.me/)**
 
