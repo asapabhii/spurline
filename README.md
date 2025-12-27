@@ -8,7 +8,7 @@
 
 **🌐 [Live Website](https://spurline.asapabhi.me/)**
 
-A production-grade AI customer support agent with real-time streaming, persistent PostgreSQL database, and clean architecture. Built with SvelteKit, Express, and Hugging Face LLM.
+AI support chat with real-time streaming responses. Built with SvelteKit, Express, PostgreSQL, and Hugging Face LLM.
 
 ---
 
@@ -90,12 +90,12 @@ Visit [http://localhost:5173](http://localhost:5173)
 - **Services** → Business logic, LLM orchestration
 - **Repositories** → PostgreSQL data access
 
-### Key Design Decisions
+### Design Decisions
 
-- **PostgreSQL** for production persistence (migrated from SQLite)
-- **Streaming-first** architecture for ChatGPT-like UX
-- **Graceful degradation** - works without Redis
-- **Type-safe** throughout (TypeScript + Zod validation)
+- PostgreSQL for production (migrated from SQLite)
+- Streaming responses for better UX
+- Works without Redis (optional)
+- TypeScript + Zod for type safety
 
 ---
 
@@ -106,43 +106,10 @@ Visit [http://localhost:5173](http://localhost:5173)
 
 ### Why Hugging Face?
 
-- ✅ Free tier, no credit card
-- ✅ Fast inference (~2-3s responses)
-- ✅ Streaming support via SSE
-- ✅ Reliable uptime
-
-### Prompting Strategy
-
-Structured system prompt with:
-1. **Role:** Customer support agent for Spurline
-2. **Rules:** Concise (1-3 sentences), no placeholders, match user language
-3. **Domain Knowledge:** Shipping, returns, contact info embedded
-
----
-
-## Deployment
-
-### Backend (Render)
-
-1. Create **PostgreSQL** database on Render (free tier)
-2. Create **Web Service**:
-   - Root Directory: `backend`
-   - Build: `npm install && npm run build`
-   - Start: `npm run migrate && npm start`
-3. Environment Variables:
-   - `DATABASE_URL` (from PostgreSQL service)
-   - `HUGGINGFACE_API_TOKEN`
-   - `FRONTEND_URL=https://spurline.asapabhi.me`
-4. Note backend URL (e.g., `https://spurline-backend.onrender.com`)
-
-### Frontend (Vercel)
-
-1. Import GitHub repo
-2. Framework: SvelteKit
-3. Root Directory: `frontend`
-4. Environment Variable: `PUBLIC_BACKEND_URL` = your Render backend URL
-5. Add custom domain: `spurline.asapabhi.me`
-
+-  Free tier, no credit card
+-  Fast inference (~2-3s responses)
+-  Streaming support via SSE
+-  Reliable uptime
 ---
 
 ## Trade-offs

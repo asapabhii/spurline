@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { chatActions, isStreaming, isTyping } from '$lib/stores/chat.store';
 
   let inputValue = $state('');
@@ -7,6 +8,20 @@
 
   const isDisabled = $derived($isStreaming || $isTyping || isSending);
   const canSend = $derived(inputValue.trim().length > 0 && !isDisabled);
+
+  // Auto-focus input when it becomes enabled (streaming/typing ends)
+  $effect(() => {
+    // Subscribe to streaming and typing changes
+    const streaming = $isStreaming;
+    const typing = $isTyping;
+
+    // Focus when input becomes enabled (not streaming, not typing, not sending)
+    if (!streaming && !typing && !isSending && textarea) {
+      tick().then(() => {
+        textarea?.focus();
+      });
+    }
+  });
 
   async function handleSubmit() {
     if (!canSend) return;
@@ -20,7 +35,7 @@
       await chatActions.sendMessage(message);
     } finally {
       isSending = false;
-      textarea?.focus();
+      // Focus will be handled by the $effect above when streaming/typing ends
     }
   }
 
