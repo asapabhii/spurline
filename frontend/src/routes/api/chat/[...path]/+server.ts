@@ -3,17 +3,18 @@ import type { RequestHandler } from './$types';
 
 /**
  * API Proxy Route for Chat Backend
- * Proxies requests to Render backend to avoid CORS issues
+ * Catch-all route to proxy requests to Render backend
+ * Handles: /api/chat/message, /api/chat/:sessionId, etc.
  */
-export const GET: RequestHandler = async ({ url, request }) => {
+export const GET: RequestHandler = async ({ url, params, request }) => {
   const backendUrl = env.PUBLIC_BACKEND_URL || 'http://localhost:3001';
-  // Extract path after /api/chat (e.g., /api/chat/sessionId -> /sessionId)
-  const match = url.pathname.match(/^\/api\/chat(\/.*)?$/);
-  const path = match?.[1] || '';
+  // Get the path parameter (everything after /api/chat/)
+  const path = params.path || '';
   const query = url.search;
+  const fullPath = path ? `/${path}${query}` : query;
 
   try {
-    const response = await fetch(`${backendUrl}/api/chat${path}${query}`, {
+    const response = await fetch(`${backendUrl}/api/chat${fullPath}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -43,15 +44,15 @@ export const GET: RequestHandler = async ({ url, request }) => {
   }
 };
 
-export const POST: RequestHandler = async ({ url, request }) => {
+export const POST: RequestHandler = async ({ url, params, request }) => {
   const backendUrl = env.PUBLIC_BACKEND_URL || 'http://localhost:3001';
-  // Extract path after /api/chat (e.g., /api/chat/message -> /message)
-  const match = url.pathname.match(/^\/api\/chat(\/.*)?$/);
-  const path = match?.[1] || '';
+  // Get the path parameter (everything after /api/chat/)
+  const path = params.path || '';
+  const fullPath = path ? `/${path}` : '';
   const body = await request.text();
 
   try {
-    const response = await fetch(`${backendUrl}/api/chat${path}`, {
+    const response = await fetch(`${backendUrl}/api/chat${fullPath}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
