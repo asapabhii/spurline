@@ -38,7 +38,7 @@ export class ChatService {
 
     try {
       // Get or create conversation
-      const conversation = conversationRepository.getOrCreate(sessionId);
+      const conversation = await conversationRepository.getOrCreate(sessionId);
       const isNewConversation = sessionId !== conversation.id;
 
       logger.info('Processing message', {
@@ -48,20 +48,20 @@ export class ChatService {
       });
 
       // Persist user message first (source of truth)
-      const userMessage = messageRepository.create(conversation.id, content, 'user');
+      const userMessage = await messageRepository.create(conversation.id, content, 'user');
 
       // Signal AI is working
       emitAiTypingStart(conversation.id);
 
       try {
         // Get conversation context
-        const history = messageRepository.findByConversationId(
+        const history = await messageRepository.findByConversationId(
           conversation.id,
           ChatService.MAX_HISTORY_CONTEXT
         );
 
         // Create placeholder message for streaming (updated with content as chunks arrive)
-        const aiMessageId = messageRepository.createPlaceholder(conversation.id);
+        const aiMessageId = await messageRepository.createPlaceholder(conversation.id);
         emitStreamStart(conversation.id, aiMessageId);
 
         // Generate response with streaming
@@ -73,7 +73,7 @@ export class ChatService {
         );
 
         // Finalize placeholder with actual content
-        const aiMessage = messageRepository.updatePlaceholder(
+        const aiMessage = await messageRepository.updatePlaceholder(
           aiMessageId,
           llmResponse.content,
           llmResponse.suggestions
@@ -147,18 +147,18 @@ export class ChatService {
   /**
    * Get full conversation history
    */
-  getConversationHistory(sessionId: string): {
+  async getConversationHistory(sessionId: string): Promise<{
     conversation: Conversation;
     messages: Message[];
-  } | null {
+  } | null> {
     try {
-      const conversation = conversationRepository.findById(sessionId);
+      const conversation = await conversationRepository.findById(sessionId);
 
       if (!conversation) {
         return null;
       }
 
-      const messages = messageRepository.findByConversationId(sessionId);
+      const messages = await messageRepository.findByConversationId(sessionId);
       return { conversation, messages };
     } catch (error) {
       logger.error('Failed to get conversation history', {

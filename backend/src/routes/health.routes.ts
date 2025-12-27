@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import { getDatabase } from '../config/database.js';
+import { getDatabase, queryOne } from '../config/database.js';
 import { getRedisClient } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
 
@@ -30,8 +30,8 @@ export function createHealthRouter(): Router {
 
     // Check database
     try {
-      const db = getDatabase();
-      db.exec('SELECT 1');
+      const pool = getDatabase();
+      await queryOne('SELECT 1');
       checks['database'] = 'ok';
     } catch (e) {
       logger.error('Health check: DB failed', {

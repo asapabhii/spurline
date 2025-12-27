@@ -1,45 +1,30 @@
-import fs from 'fs';
-import path from 'path';
-import initSqlJs, { Database as SqlJsDatabase, SqlValue } from 'sql.js';
+import { Pool, PoolClient } from 'pg';
 
 import { env } from './environment.js';
 import { logger } from '../utils/logger.js';
 
-let db: SqlJsDatabase | null = null;
-let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+let pool: Pool | null = null;
 
 /**
- * Initialize sql.js and load/create database
+ * Initialize PostgreSQL connection pool
  */
-export async function initDatabase(): Promise<SqlJsDatabase> {
-  if (db) {
-    return db;
+export async function initDatabase(): Promise<Pool> {
+  if (pool) {
+    return pool;
   }
 
   try {
-    // Initialize SQL.js
-    SQL = await initSqlJs();
+    pool = new Pool({
+      connectionString: env.DATABASE_URL,
+      ssl: env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    });
 
-    const dbPath = env.DATABASE_PATH;
-    const dbDir = path.dirname(dbPath);
+    // Test connection
+    const client = await pool.connect();
+    client.release();
 
-    // Ensure data directory exists
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
-    }
-
-    // Load existing database or create new one
-    if (fs.existsSync(dbPath)) {
-      const fileBuffer = fs.readFileSync(dbPath);
-      db = new SQL.Database(fileBuffer);
-    } else {
-      db = new SQL.Database();
-    }
-
-    // Enable foreign keys
-    db.run('PRAGMA foreign_keys = ON');
-
-    return db;
+    logger.info('Database connected successfully');
+    return pool;
   } catch (error) {
     logger.error('Database initialization failed', {
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -49,69 +34,50 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
 }
 
 /**
- * Get database instance (must be initialized first)
+ * Get database pool (must be initialized first)
  */
-export function getDatabase(): SqlJsDatabase {
-  if (!db) {
+export function getDatabase(): Pool {
+  if (!pool) {
     throw new Error('Database not initialized. Call initDatabase() first.');
   }
-  return db;
+  return pool;
 }
 
 /**
- * Save database to file (with error handling)
- * Note: Called after every write operation (consider batching in production)
+ * Close database connection pool
  */
-export function saveDatabase(): void {
-  if (!db) return;
-
-  try {
-    const dbPath = env.DATABASE_PATH;
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
-  } catch (error) {
-    logger.error('Failed to save database', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-    // Don't throw - allow app to continue even if save fails
-  }
-}
-
-/**
- * Close database and save to file
- */
-export function closeDatabase(): void {
-  if (db) {
+export async function closeDatabase(): Promise<void> {
+  if (pool) {
     try {
-      saveDatabase();
-      db.close();
+      await pool.end();
+      logger.info('Database connection closed');
     } catch (error) {
       logger.error('Error closing database', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
-      db = null;
+      pool = null;
     }
   }
 }
 
 /**
+ * Convert SQLite-style ? placeholders to PostgreSQL $1, $2, etc.
+ */
+function convertParams(sql: string, params: unknown[]): string {
+  let paramIndex = 1;
+  return sql.replace(/\?/g, () => `$${paramIndex++}`);
+}
+
+/**
  * Helper to run a query and get results as array of objects
  */
-export function queryAll<T>(sql: string, params: SqlValue[] = []): T[] {
+export async function queryAll<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   try {
     const database = getDatabase();
-    const stmt = database.prepare(sql);
-    stmt.bind(params);
-
-    const results: T[] = [];
-    while (stmt.step()) {
-      const row = stmt.getAsObject();
-      results.push(row as T);
-    }
-    stmt.free();
-    return results;
+    const pgSql = convertParams(sql, params);
+    const result = await database.query(pgSql, params);
+    return result.rows as T[];
   } catch (error) {
     logger.error('Database query failed', {
       sql,
@@ -124,9 +90,9 @@ export function queryAll<T>(sql: string, params: SqlValue[] = []): T[] {
 /**
  * Run a query and return the first result, or undefined if none
  */
-export function queryOne<T>(sql: string, params: SqlValue[] = []): T | undefined {
+export async function queryOne<T>(sql: string, params: unknown[] = []): Promise<T | undefined> {
   try {
-    const results = queryAll<T>(sql, params);
+    const results = await queryAll<T>(sql, params);
     return results[0];
   } catch (error) {
     logger.error('Database query failed', {
@@ -139,19 +105,33 @@ export function queryOne<T>(sql: string, params: SqlValue[] = []): T | undefined
 
 /**
  * Helper to run a statement (INSERT, UPDATE, DELETE)
- * Automatically saves database after write
  */
-export function runStatement(sql: string, params: SqlValue[] = []): void {
+export async function runStatement(sql: string, params: unknown[] = []): Promise<void> {
   try {
     const database = getDatabase();
-    database.run(sql, params);
-    // Auto-save after writes
-    saveDatabase();
+    const pgSql = convertParams(sql, params);
+    await database.query(pgSql, params);
   } catch (error) {
     logger.error('Database statement failed', {
       sql,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
     throw new Error('Database operation failed');
+  }
+}
+
+/**
+ * Execute a raw SQL query (for DDL statements like CREATE TABLE)
+ */
+export async function executeRaw(sql: string): Promise<void> {
+  try {
+    const database = getDatabase();
+    await database.query(sql);
+  } catch (error) {
+    logger.error('Database raw query failed', {
+      sql,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
   }
 }

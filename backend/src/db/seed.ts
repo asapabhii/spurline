@@ -6,11 +6,13 @@ async function seedDatabase(): Promise<void> {
   await initDatabase();
 
   // Check if data already exists
-  const existing = queryOne<{ count: number }>('SELECT COUNT(*) as count FROM conversations');
+  const existing = await queryOne<{ count: string }>(
+    'SELECT COUNT(*) as count FROM conversations'
+  );
 
-  if (existing && existing.count > 0) {
+  if (existing && parseInt(existing.count, 10) > 0) {
     logger.info('Database already seeded, skipping');
-    closeDatabase();
+    await closeDatabase();
     return;
   }
 
@@ -20,8 +22,8 @@ async function seedDatabase(): Promise<void> {
   const now = new Date();
 
   // Create sample conversation
-  runStatement(
-    'INSERT INTO conversations (id, created_at, channel, metadata) VALUES (?, ?, ?, ?)',
+  await runStatement(
+    'INSERT INTO conversations (id, created_at, channel, metadata) VALUES ($1, $2, $3, $4)',
     [conversationId, now.toISOString(), 'web', JSON.stringify({ source: 'seed' })]
   );
 
@@ -56,14 +58,14 @@ async function seedDatabase(): Promise<void> {
   ];
 
   for (const msg of messages) {
-    runStatement(
-      'INSERT INTO messages (id, conversation_id, sender, content, created_at) VALUES (?, ?, ?, ?, ?)',
+    await runStatement(
+      'INSERT INTO messages (id, conversation_id, sender, content, created_at) VALUES ($1, $2, $3, $4, $5)',
       [msg.id, conversationId, msg.sender, msg.content, msg.timestamp]
     );
   }
 
   logger.info('Database seeded successfully', { conversationId });
-  closeDatabase();
+  await closeDatabase();
 }
 
 seedDatabase().catch((error) => {

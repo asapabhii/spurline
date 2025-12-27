@@ -78,7 +78,7 @@ export class ChatController {
         throw new AppError(400, 'Session ID is required', 'VALIDATION_ERROR');
       }
 
-      const result = chatService.getConversationHistory(sessionId);
+      const result = await chatService.getConversationHistory(sessionId);
 
       if (!result) {
         throw new AppError(404, 'Conversation not found', 'NOT_FOUND');
@@ -86,7 +86,7 @@ export class ChatController {
 
       // Get messages with suggestions
       const messagesWithSuggestions =
-        messageRepository.findByConversationIdWithSuggestions(sessionId);
+        await messageRepository.findByConversationIdWithSuggestions(sessionId);
 
       res.status(200).json({
         messages: messagesWithSuggestions.map((msg) => ({

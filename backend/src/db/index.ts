@@ -5,5 +5,4 @@ export {
   queryAll,
   queryOne,
   runStatement,
-  saveDatabase,
 } from '../config/database.js';

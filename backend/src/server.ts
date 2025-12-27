@@ -70,7 +70,7 @@ async function main(): Promise<void> {
 
     try {
       await closeRedis();
-      closeDatabase();
+      await closeDatabase();
       logger.info('All connections closed');
       process.exit(0);
     } catch (error) {

@@ -13,7 +13,10 @@ export class ConversationRepository {
   /**
    * Create a new conversation
    */
-  create(channel: string = 'web', metadata: Record<string, unknown> | null = null): Conversation {
+  async create(
+    channel: string = 'web',
+    metadata: Record<string, unknown> | null = null
+  ): Promise<Conversation> {
     const id = generateId();
     const createdAt = new Date().toISOString();
     const validChannel = isValidChannel(channel) ? channel : 'web';
@@ -28,8 +31,8 @@ export class ConversationRepository {
       }
     }
 
-    runStatement(
-      'INSERT INTO conversations (id, created_at, channel, metadata) VALUES (?, ?, ?, ?)',
+    await runStatement(
+      'INSERT INTO conversations (id, created_at, channel, metadata) VALUES ($1, $2, $3, $4)',
       [id, createdAt, validChannel, metadataJson]
     );
 
@@ -39,8 +42,8 @@ export class ConversationRepository {
   /**
    * Find conversation by ID
    */
-  findById(id: string): Conversation | null {
-    const row = queryOne<ConversationRow>('SELECT * FROM conversations WHERE id = ?', [id]);
+  async findById(id: string): Promise<Conversation | null> {
+    const row = await queryOne<ConversationRow>('SELECT * FROM conversations WHERE id = $1', [id]);
 
     if (!row) {
       return null;
@@ -52,8 +55,10 @@ export class ConversationRepository {
   /**
    * Check if conversation exists
    */
-  exists(id: string): boolean {
-    const result = queryOne<{ id: string }>('SELECT id FROM conversations WHERE id = ?', [id]);
+  async exists(id: string): Promise<boolean> {
+    const result = await queryOne<{ id: string }>('SELECT id FROM conversations WHERE id = $1', [
+      id,
+    ]);
     return result !== undefined;
   }
 
@@ -61,9 +66,9 @@ export class ConversationRepository {
    * Get or create conversation by ID
    * If ID is provided and exists, return it; otherwise create new
    */
-  getOrCreate(sessionId?: string): Conversation {
+  async getOrCreate(sessionId?: string): Promise<Conversation> {
     if (sessionId) {
-      const existing = this.findById(sessionId);
+      const existing = await this.findById(sessionId);
       if (existing) {
         return existing;
       }
