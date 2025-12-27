@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: spurline-backend
+    env: node
+    plan: starter
+    buildCommand: cd backend && npm install && npm run build
+    startCommand: cd backend && npm run migrate && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/backend/data/spurline.db
+      - key: HUGGINGFACE_API_TOKEN
+        sync: false
+      - key: FRONTEND_URL
+        value: https://spurline.asapabhi.me
+      - key: REDIS_URL
+        sync: false
+    disk:
+      name: spurline-db
+      mountPath: /opt/render/project/src/backend/data
+      sizeGB: 1
+

@@ -1,7 +1,8 @@
 import { io, Socket } from 'socket.io-client';
+import { env } from '$env/dynamic/public';
 import { SocketEvents } from '$lib/types';
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = env.PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 let socket: Socket | null = null;
 
