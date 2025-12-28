@@ -7,6 +7,7 @@
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 **🌐 [Live Website](https://spurline.asapabhi.me/)**
+
 Note: Sometimes it might take upto 50 seconds to get a response on the website as its being hosted on a free instance of render.
 
 AI support chat with real-time streaming responses. Built with SvelteKit, Express, PostgreSQL, and Hugging Face LLM.
